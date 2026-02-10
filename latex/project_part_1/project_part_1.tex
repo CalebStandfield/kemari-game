@@ -1,0 +1,84 @@
+\documentclass[11pt]{article}
+
+% ---------- Packages ----------
+\usepackage[margin=1in]{geometry}
+\usepackage{parskip} % space between paragraphs, no indent
+\usepackage{hyperref}
+\usepackage{enumitem}
+\usepackage{titlesec}
+
+% ---------- Simple styling ----------
+\titleformat{\section}{\large\bfseries}{\thesection}{0.75em}{}
+\titleformat{\subsection}{\normalsize\bfseries}{\thesubsection}{0.75em}{}
+
+% ---------- Doc info ----------
+\newcommand{\ProjectTitle}{Kemari: Ritual Juggling Prototype}
+\newcommand{\AuthorName}{Caleb Standfield}
+\newcommand{\DocType}{Project Part 1 Outline / Proposal}
+\newcommand{\DateText}{\today}
+
+\begin{document}
+
+\begin{center}
+    {\LARGE \ProjectTitle}\par
+    \vspace{0.25em}
+    {\AuthorName \;|\; \DocType \;|\; \DateText}
+\end{center}
+
+\section*{Kemari Project Proposal}
+
+\subsection*{Proposed Topic}
+Kemari is a useful example of play as cultural performance: it is cooperative, formalized, and focused on maintaining rhythm, composure, and correctness rather than defeating an opponent. This project explores what happens when that kind of ritual play is translated into a modern interactive system without accidentally turning it into a competitive sports game.
+
+\subsection*{Proposed Form}
+A small playable 2D top-down game prototype built in \textbf{Rust} (likely using \textbf{Bevy}), plus a short written reflection describing how mechanics, scoring, and constraints express the intended tone of the activity.
+
+\subsection*{Project Description}
+The prototype is intentionally scoped as a \textbf{vertical slice}, not a full game. The player is placed in a simple court environment with a small group of other participants (either static figures or simple AI). The main action is keeping the ball in the air by timing controlled ``kicks'' that redirect the ball upward and toward safe space. There is no opponent and no ``match'' structure. The experience should feel like maintaining a shared performance rather than competing.
+
+The primary success metric is a \textbf{Chain counter} (consecutive touches without the ball touching the ground). However, the project is not just about survival time. A separate \textbf{Elegance / Ritual meter} rewards controlled touches, calm rhythm, and good positioning while discouraging frantic optimization. For example, it should be possible to keep the ball in the air through chaotic movement or overly powerful kicks, but the system will treat that as low elegance. Conversely, the highest evaluation comes from consistent timing, gentle redirection, and avoiding behavior that feels ``athletic domination.''
+
+If time allows, additional constraints can make the interpretation clearer: limited movement per touch, timing windows that encourage composure, and environmental elements that matter to play (e.g., corner features influencing trajectory). The intended final demo is a short, replayable loop where a player can quickly understand the goal, attempt to improve their chain and elegance, and feel the difference between ``keeping it up'' and ``keeping it up well.'' Personally, the point is to practice Rust in a medium-sized interactive project and to explore how game design choices encode assumptions about what play is supposed to value.
+
+\subsection*{Scope and Deliverables}
+\begin{itemize}[leftmargin=*, itemsep=0.25em]
+  \item \textbf{Minimum Viable Deliverable (core):}
+    \begin{itemize}[leftmargin=*, itemsep=0.25em]
+      \item One playable court scene (background + character positions).
+      \item A ball with simple arc motion (position + velocity + gravity).
+      \item A kick action (input applies an impulse if the ball is within range).
+      \item A Chain counter that increases on valid touches and resets on drops.
+      \item A basic Elegance system (timing window: bad/good/perfect feedback).
+    \end{itemize}
+  \item \textbf{Stretch Goals (only if time):}
+    \begin{itemize}[leftmargin=*, itemsep=0.25em]
+      \item Pass targeting (choose where the ball goes / who receives).
+      \item Environmental influence (corner features affecting trajectory).
+      \item ``Ritual rules'' toggles (e.g., movement limit per touch, no repeat touches).
+      \item Audio/visual polish (kick SFX, hit sparks, better UI).
+    \end{itemize}
+  \item \textbf{Out of Scope (explicitly not doing):}
+    \begin{itemize}[leftmargin=*, itemsep=0.25em]
+      \item Multiplayer networking.
+      \item Large levels, story campaign, complex AI, or many courts.
+      \item Realistic physics simulation (the goal is readability and feel, not accuracy).
+    \end{itemize}
+\end{itemize}
+
+\subsection*{Resources / References}
+\begin{itemize}[leftmargin=*, itemsep=0.25em]
+  \item \textbf{Conceptual references:} short academic summaries or essays describing kemari's rules, social role, and emphasis on formality/cooperation.
+  \item \textbf{Visual references:} diagrams/images of kemari court layouts and Heian clothing silhouettes (museum collections or reputable educational sources).
+  \item \textbf{Technical references:} Rust + Bevy documentation, Bevy 2D tutorials, and basic sprite/UI examples.
+\end{itemize}
+
+\subsection*{Rough Timeline (30--50 hours total)}
+\begin{itemize}[leftmargin=*, itemsep=0.25em]
+  \item \textbf{Block 1 (Hours 1--8):} Project setup, window, sprites, court scene, basic player movement.
+  \item \textbf{Block 2 (Hours 9--18):} Ball motion (gravity), kick interaction, fail state on drop.
+  \item \textbf{Block 3 (Hours 19--28):} Chain counter, timing windows, Elegance meter, UI text.
+  \item \textbf{Block 4 (Hours 29--40):} Tuning and polish (feel, restart loop, small VFX/SFX).
+  \item \textbf{Optional (Hours 41--50):} Stretch goals (targeted passing or ritual constraints).
+\end{itemize}
+
+\end{document}
