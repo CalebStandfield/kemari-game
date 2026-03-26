@@ -69,7 +69,7 @@ See: `docs/01_design_pillars.md`
 ## Tech
 
 - Language: Rust
-- Engine: Bevy (2D)
+- Engine: Bevy
 - Assets: placeholder shapes/sprites for now
 
 ---
