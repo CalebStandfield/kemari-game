@@ -1,5 +1,5 @@
-mod components;
 mod assist;
+mod components;
 mod formation;
 mod idle;
 mod spawn;
