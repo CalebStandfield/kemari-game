@@ -21,6 +21,20 @@ impl Plugin for AppFlowPlugin {
             .add_systems(
                 OnExit(GameState::StartScreen),
                 startup::despawn_start_screen,
+            )
+            .add_systems(OnEnter(GameState::InGame), startup::spawn_in_game_hud)
+            .add_systems(
+                Update,
+                (
+                    startup::handle_in_game_hotkeys,
+                    startup::handle_in_game_buttons,
+                )
+                    .run_if(in_state(GameState::InGame)),
+            )
+            .add_systems(OnExit(GameState::InGame), startup::despawn_in_game_hud)
+            .add_systems(
+                OnEnter(GameState::Restarting),
+                startup::advance_restart_state,
             );
     }
 }

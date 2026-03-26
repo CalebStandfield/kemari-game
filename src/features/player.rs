@@ -13,6 +13,7 @@ pub struct PlayerPlugin;
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
         app.add_systems(OnEnter(crate::core::GameState::InGame), spawn_players)
+            .add_systems(OnExit(crate::core::GameState::InGame), despawn_players)
             .add_systems(
                 Update,
                 player_movement.run_if(in_state(crate::core::GameState::InGame)),
@@ -99,5 +100,11 @@ fn player_movement(
         transform.translation.x += movement.x;
         transform.translation.z += movement.y;
         transform.translation.y = crate::core::PLAYER_Y;
+    }
+}
+
+fn despawn_players(mut commands: Commands, player_query: Query<Entity, With<components::Player>>) {
+    for entity in &player_query {
+        commands.entity(entity).despawn();
     }
 }

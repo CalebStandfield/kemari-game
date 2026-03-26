@@ -11,7 +11,8 @@ pub struct BallPlugin;
 
 impl Plugin for BallPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(crate::core::GameState::InGame), spawn_ball);
+        app.add_systems(OnEnter(crate::core::GameState::InGame), spawn_ball)
+            .add_systems(OnExit(crate::core::GameState::InGame), despawn_ball);
     }
 }
 
@@ -35,4 +36,10 @@ fn spawn_ball(
             crate::core::BALL_START_Z,
         ),
     ));
+}
+
+fn despawn_ball(mut commands: Commands, ball_query: Query<Entity, With<components::Ball>>) {
+    for entity in &ball_query {
+        commands.entity(entity).despawn();
+    }
 }

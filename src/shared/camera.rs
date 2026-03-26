@@ -19,6 +19,7 @@ fn spawn_main_camera(mut commands: Commands) {
     commands.spawn((
         Camera3d::default(),
         Transform::from_xyz(0.0, 14.0, 14.0).looking_at(Vec3::new(0.0, 0.5, 0.0), Vec3::Y),
+        IsDefaultUiCamera,
         MainCamera,
     ));
 

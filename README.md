@@ -33,7 +33,7 @@ In this prototype you:
 
 - WASD: move
 - Space: kick
-- R: reset ball (debug)
+- R: reset game (score, ball, character placements)
 - Esc: quit
 
 ---
