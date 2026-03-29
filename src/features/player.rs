@@ -8,6 +8,8 @@ mod systems;
 use bevy::prelude::*;
 use std::f32::consts::TAU;
 
+pub use components::{ControlledPlayer, Player};
+
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
@@ -47,7 +49,7 @@ fn spawn_players(
         }
 
         let mut entity_commands = commands.spawn((
-            components::Player,
+            Player,
             Mesh3d(meshes.add(Cuboid::new(
                 crate::core::PLAYER_WIDTH,
                 crate::core::PLAYER_HEIGHT,
@@ -65,7 +67,7 @@ fn spawn_players(
         ));
 
         if is_controlled {
-            entity_commands.insert(components::ControlledPlayer);
+            entity_commands.insert(ControlledPlayer);
         }
     }
 }
@@ -73,7 +75,7 @@ fn spawn_players(
 fn player_movement(
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut player_query: Query<&mut Transform, With<components::ControlledPlayer>>,
+    mut player_query: Query<&mut Transform, With<ControlledPlayer>>,
 ) {
     let mut direction = Vec2::ZERO;
 
@@ -95,15 +97,19 @@ fn player_movement(
     }
 
     let movement = direction.normalize() * crate::core::PLAYER_SPEED * time.delta_secs();
+    let max_x = (crate::core::COURT_WIDTH * 0.5) - crate::core::PLAYER_COLLIDER_RADIUS;
+    let max_z = (crate::core::COURT_DEPTH * 0.5) - crate::core::PLAYER_COLLIDER_RADIUS;
 
     for mut transform in &mut player_query {
         transform.translation.x += movement.x;
         transform.translation.z += movement.y;
+        transform.translation.x = transform.translation.x.clamp(-max_x, max_x);
+        transform.translation.z = transform.translation.z.clamp(-max_z, max_z);
         transform.translation.y = crate::core::PLAYER_Y;
     }
 }
 
-fn despawn_players(mut commands: Commands, player_query: Query<Entity, With<components::Player>>) {
+fn despawn_players(mut commands: Commands, player_query: Query<Entity, With<Player>>) {
     for entity in &player_query {
         commands.entity(entity).despawn();
     }
