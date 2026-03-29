@@ -12,6 +12,9 @@ pub const PLAYER_DEPTH: f32 = 0.8;
 pub const PLAYER_COLLIDER_RADIUS: f32 = 0.45;
 pub const PLAYER_Y: f32 = PLAYER_HEIGHT * 0.5;
 pub const PLAYER_SPEED: f32 = 8.0;
+pub const PLAYER_KICK_RANGE: f32 = 0.6;
+pub const PLAYER_KICK_SPEED: f32 = 11.5;
+pub const PLAYER_KICK_LIFT: f32 = 4.5;
 
 pub const BALL_RADIUS: f32 = 0.35;
 pub const BALL_START_X: f32 = 0.0;

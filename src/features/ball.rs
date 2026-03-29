@@ -7,6 +7,8 @@ mod trajectory;
 
 use bevy::prelude::*;
 
+pub use components::{Ball, BallVelocity};
+
 pub struct BallPlugin;
 
 impl Plugin for BallPlugin {
@@ -26,8 +28,8 @@ fn spawn_ball(
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     commands.spawn((
-        components::Ball,
-        components::BallVelocity::default(),
+        Ball,
+        BallVelocity::default(),
         Mesh3d(meshes.add(Sphere::new(crate::core::BALL_RADIUS))),
         MeshMaterial3d(materials.add(StandardMaterial {
             base_color: Color::srgb(0.94, 0.94, 0.92),
@@ -43,7 +45,7 @@ fn spawn_ball(
     ));
 }
 
-fn despawn_ball(mut commands: Commands, ball_query: Query<Entity, With<components::Ball>>) {
+fn despawn_ball(mut commands: Commands, ball_query: Query<Entity, With<Ball>>) {
     for entity in &ball_query {
         commands.entity(entity).despawn();
     }
@@ -52,10 +54,10 @@ fn despawn_ball(mut commands: Commands, ball_query: Query<Entity, With<component
 fn simulate_ball(
     time: Res<Time>,
     mut ball_query: Query<
-        (&mut Transform, &mut components::BallVelocity),
-        (With<components::Ball>, Without<crate::features::player::Player>),
+        (&mut Transform, &mut BallVelocity),
+        (With<Ball>, Without<crate::features::player::Player>),
     >,
-    player_query: Query<&Transform, (With<crate::features::player::Player>, Without<components::Ball>)>,
+    player_query: Query<&Transform, (With<crate::features::player::Player>, Without<Ball>)>,
 ) {
     let delta_seconds = time.delta_secs();
     if delta_seconds <= 0.0 {
@@ -106,10 +108,7 @@ fn simulate_ball(
 fn resolve_player_ball_collisions(
     ball_position: &mut Vec3,
     ball_velocity: &mut Vec3,
-    player_query: &Query<
-        &Transform,
-        (With<crate::features::player::Player>, Without<components::Ball>),
-    >,
+    player_query: &Query<&Transform, (With<crate::features::player::Player>, Without<Ball>)>,
 ) {
     let collision_distance = crate::core::BALL_RADIUS + crate::core::PLAYER_COLLIDER_RADIUS;
 
