@@ -15,6 +15,10 @@ impl Plugin for RitualPlugin {
         app.init_resource::<rhythm::EleganceMeter>()
             .init_resource::<patterns::TouchPatternState>()
             .add_systems(
+                OnExit(crate::core::GameState::InGame),
+                systems::reset_match_ritual_state,
+            )
+            .add_systems(
                 Update,
                 systems::update_elegance
                     .in_set(crate::core::GameplaySet::Ritual)

@@ -65,3 +65,11 @@ pub fn update_elegance(
 
     elegance.value = (elegance.value + delta).clamp(0.0, crate::core::ELEGANCE_MAX);
 }
+
+pub fn reset_match_ritual_state(
+    mut pattern_state: ResMut<TouchPatternState>,
+    mut elegance: ResMut<EleganceMeter>,
+) {
+    *pattern_state = TouchPatternState::default();
+    *elegance = EleganceMeter::default();
+}
