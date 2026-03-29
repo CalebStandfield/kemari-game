@@ -5,6 +5,7 @@ mod movement;
 mod spawn;
 mod systems;
 
+use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
 use std::f32::consts::TAU;
 
@@ -18,8 +19,14 @@ impl Plugin for PlayerPlugin {
             .add_systems(OnExit(crate::core::GameState::InGame), despawn_players)
             .add_systems(
                 Update,
-                (player_movement, kick_ball, resolve_player_collisions)
+                (
+                    tick_touch_cooldowns,
+                    player_movement,
+                    emit_touch_attempts,
+                    resolve_player_collisions,
+                )
                     .chain()
+                    .in_set(crate::core::GameplaySet::PlayerInput)
                     .run_if(in_state(crate::core::GameState::InGame)),
             );
     }
@@ -52,6 +59,9 @@ fn spawn_players(
 
         let mut entity_commands = commands.spawn((
             Player,
+            crate::core::PlayerBody,
+            components::PlayerFacing::default(),
+            components::PlayerTouchCooldowns::default(),
             Mesh3d(meshes.add(Cuboid::new(
                 crate::core::PLAYER_WIDTH,
                 crate::core::PLAYER_HEIGHT,
@@ -77,7 +87,10 @@ fn spawn_players(
 fn player_movement(
     time: Res<Time>,
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut player_query: Query<&mut Transform, With<ControlledPlayer>>,
+    mut player_query: Query<
+        (&mut Transform, &mut components::PlayerFacing),
+        With<ControlledPlayer>,
+    >,
 ) {
     let mut direction = Vec2::ZERO;
 
@@ -104,7 +117,8 @@ fn player_movement(
     let max_x = (crate::core::COURT_WIDTH * 0.5) - crate::core::PLAYER_COLLIDER_RADIUS;
     let max_z = (crate::core::COURT_DEPTH * 0.5) - crate::core::PLAYER_COLLIDER_RADIUS;
 
-    for mut transform in &mut player_query {
+    for (mut transform, mut facing) in &mut player_query {
+        facing.0 = normalized_direction;
         transform.look_to(facing_direction, Vec3::Y);
         transform.translation.x += movement.x;
         transform.translation.z += movement.y;
@@ -114,46 +128,69 @@ fn player_movement(
     }
 }
 
-fn kick_ball(
+fn tick_touch_cooldowns(
+    time: Res<Time>,
+    mut player_query: Query<&mut components::PlayerTouchCooldowns, With<ControlledPlayer>>,
+) {
+    let delta_seconds = time.delta_secs();
+    if delta_seconds <= 0.0 {
+        return;
+    }
+
+    for mut cooldowns in &mut player_query {
+        cooldowns.kick = (cooldowns.kick - delta_seconds).max(0.0);
+        cooldowns.head = (cooldowns.head - delta_seconds).max(0.0);
+        cooldowns.juggle = (cooldowns.juggle - delta_seconds).max(0.0);
+    }
+}
+
+fn emit_touch_attempts(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    player_query: Query<&Transform, (With<ControlledPlayer>, Without<crate::features::ball::Ball>)>,
-    mut ball_query: Query<
-        (&Transform, &mut crate::features::ball::BallVelocity),
-        (With<crate::features::ball::Ball>, Without<ControlledPlayer>),
+    mut touch_writer: MessageWriter<crate::core::PlayerTouchAttemptEvent>,
+    mut player_query: Query<
+        (
+            Entity,
+            &components::PlayerFacing,
+            &mut components::PlayerTouchCooldowns,
+        ),
+        With<ControlledPlayer>,
     >,
 ) {
-    if !keyboard_input.just_pressed(KeyCode::Space) {
-        return;
-    }
-
-    let Ok(player_transform) = player_query.single() else {
-        return;
-    };
-    let Ok((ball_transform, mut ball_velocity)) = ball_query.single_mut() else {
+    let Ok((player_entity, facing, mut cooldowns)) = player_query.single_mut() else {
         return;
     };
 
-    let ball_offset = Vec2::new(
-        ball_transform.translation.x - player_transform.translation.x,
-        ball_transform.translation.z - player_transform.translation.z,
-    );
-    let kick_reach = crate::core::PLAYER_COLLIDER_RADIUS
-        + crate::core::BALL_RADIUS
-        + crate::core::PLAYER_KICK_RANGE;
-    if ball_offset.length_squared() > kick_reach * kick_reach {
+    let facing = facing.0.normalize_or_zero();
+    if facing == Vec2::ZERO {
         return;
     }
 
-    let mut facing_direction = player_transform.rotation * Vec3::NEG_Z;
-    facing_direction.y = 0.0;
-    let facing_direction = facing_direction.normalize_or_zero();
-    if facing_direction == Vec3::ZERO {
-        return;
+    if keyboard_input.just_pressed(KeyCode::KeyK) && cooldowns.kick <= 0.0 {
+        cooldowns.kick = crate::core::TOUCH_COOLDOWN_KICK;
+        touch_writer.write(crate::core::PlayerTouchAttemptEvent {
+            player: player_entity,
+            kind: crate::core::TouchKind::Kick,
+            facing,
+        });
     }
 
-    ball_velocity.linear.x = facing_direction.x * crate::core::PLAYER_KICK_SPEED;
-    ball_velocity.linear.z = facing_direction.z * crate::core::PLAYER_KICK_SPEED;
-    ball_velocity.linear.y = ball_velocity.linear.y.max(crate::core::PLAYER_KICK_LIFT);
+    if keyboard_input.just_pressed(KeyCode::KeyH) && cooldowns.head <= 0.0 {
+        cooldowns.head = crate::core::TOUCH_COOLDOWN_HEAD;
+        touch_writer.write(crate::core::PlayerTouchAttemptEvent {
+            player: player_entity,
+            kind: crate::core::TouchKind::Head,
+            facing,
+        });
+    }
+
+    if keyboard_input.just_pressed(KeyCode::KeyJ) && cooldowns.juggle <= 0.0 {
+        cooldowns.juggle = crate::core::TOUCH_COOLDOWN_JUGGLE;
+        touch_writer.write(crate::core::PlayerTouchAttemptEvent {
+            player: player_entity,
+            kind: crate::core::TouchKind::Juggle,
+            facing,
+        });
+    }
 }
 
 fn resolve_player_collisions(mut player_query: Query<&mut Transform, With<Player>>) {

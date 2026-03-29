@@ -13,3 +13,14 @@ impl Default for BallVelocity {
         Self { linear: Vec3::ZERO }
     }
 }
+
+#[derive(Component, Debug, Clone, Copy)]
+pub struct BallGroundState {
+    pub grounded: bool,
+}
+
+impl Default for BallGroundState {
+    fn default() -> Self {
+        Self { grounded: true }
+    }
+}

@@ -12,12 +12,6 @@ pub struct StartScreenSelectionText;
 #[derive(Component)]
 pub struct InGameHudRoot;
 
-#[derive(Component)]
-pub struct BackToStartButton;
-
-#[derive(Component)]
-pub struct ResetGameButton;
-
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct StartScreenSelection {
     pub player_count: usize,
@@ -133,60 +127,10 @@ pub fn spawn_in_game_hud(mut commands: Commands) {
                 TextColor(Color::srgb(0.95, 0.92, 0.80)),
             ));
             parent.spawn((
-                Text::new("Esc = Back to Start, R = Reset Match"),
+                Text::new("K/H/J = Touches, Esc = Start Screen, R = Reset Match"),
                 TextFont::from_font_size(16.0),
                 TextColor(Color::srgb(0.74, 0.80, 0.84)),
             ));
-
-            parent
-                .spawn((Node {
-                    display: Display::Flex,
-                    column_gap: px(8),
-                    ..default()
-                },))
-                .with_children(|buttons| {
-                    buttons
-                        .spawn((
-                            Button,
-                            Node {
-                                width: px(150),
-                                height: px(34),
-                                justify_content: JustifyContent::Center,
-                                align_items: AlignItems::Center,
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgb(0.16, 0.19, 0.22)),
-                            BackToStartButton,
-                        ))
-                        .with_children(|button| {
-                            button.spawn((
-                                Text::new("Back to Start"),
-                                TextFont::from_font_size(16.0),
-                                TextColor(Color::srgb(0.93, 0.94, 0.95)),
-                            ));
-                        });
-
-                    buttons
-                        .spawn((
-                            Button,
-                            Node {
-                                width: px(130),
-                                height: px(34),
-                                justify_content: JustifyContent::Center,
-                                align_items: AlignItems::Center,
-                                ..default()
-                            },
-                            BackgroundColor(Color::srgb(0.16, 0.19, 0.22)),
-                            ResetGameButton,
-                        ))
-                        .with_children(|button| {
-                            button.spawn((
-                                Text::new("Reset Match"),
-                                TextFont::from_font_size(16.0),
-                                TextColor(Color::srgb(0.93, 0.94, 0.95)),
-                            ));
-                        });
-                });
         });
 }
 
@@ -207,46 +151,6 @@ pub fn handle_in_game_hotkeys(
 
     if keyboard_input.just_pressed(KeyCode::KeyR) {
         next_state.set(GameState::Restarting);
-    }
-}
-
-pub fn handle_in_game_buttons(
-    mut button_query: Query<
-        (
-            &Interaction,
-            &mut BackgroundColor,
-            Option<&BackToStartButton>,
-            Option<&ResetGameButton>,
-        ),
-        (
-            Changed<Interaction>,
-            With<Button>,
-            Or<(With<BackToStartButton>, With<ResetGameButton>)>,
-        ),
-    >,
-    mut next_state: ResMut<NextState<GameState>>,
-) {
-    for (interaction, mut background_color, back_button, reset_button) in &mut button_query {
-        match *interaction {
-            Interaction::Pressed => {
-                *background_color = BackgroundColor(Color::srgb(0.30, 0.34, 0.38));
-
-                if back_button.is_some() {
-                    next_state.set(GameState::StartScreen);
-                    continue;
-                }
-
-                if reset_button.is_some() {
-                    next_state.set(GameState::Restarting);
-                }
-            }
-            Interaction::Hovered => {
-                *background_color = BackgroundColor(Color::srgb(0.22, 0.26, 0.30));
-            }
-            Interaction::None => {
-                *background_color = BackgroundColor(Color::srgb(0.16, 0.19, 0.22));
-            }
-        }
     }
 }
 
