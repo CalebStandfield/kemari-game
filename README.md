@@ -74,6 +74,15 @@ See: `docs/01_design_pillars.md`
 
 ---
 
+## Asset Credits
+
+- "Sakura Tree 01 - Low Poly Model" by Jogoss
+  License: CC BY 4.0
+  Source: https://sketchfab.com/3d-models/sakura-tree-01-low-poly-model-147ae7d0d332456a99ec6195e9b0cd4f?utm_source=chatgpt.com
+  Changes: Converted/used in-game, scaled/rotated/compressed as needed
+
+---
+
 ## How to run
 
 ```bash

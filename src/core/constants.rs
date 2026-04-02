@@ -5,6 +5,9 @@ pub const WINDOW_HEIGHT: u32 = 720;
 pub const COURT_WIDTH: f32 = 18.0;
 pub const COURT_DEPTH: f32 = 12.0;
 pub const COURT_Y: f32 = 0.0;
+pub const COURT_CORNER_TREE_PADDING: f32 = 0.25;
+pub const COURT_CORNER_TREE_SCALE: f32 = 15.0;
+pub const COURT_CORNER_TREE_SCENE_PATH: &str = "models/sakura_tree_01_-_low_poly_model.glb#Scene0";
 
 pub const PLAYER_WIDTH: f32 = 0.8;
 pub const PLAYER_HEIGHT: f32 = 1.6;

@@ -18,6 +18,7 @@ impl Plugin for CourtPlugin {
 
 fn spawn_court(
     mut commands: Commands,
+    asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
     mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
@@ -37,6 +38,8 @@ fn spawn_court(
         })),
         Transform::from_xyz(0.0, crate::core::COURT_Y, 0.0),
     ));
+
+    trees::spawn_corner_sakura_trees(&mut commands, &asset_server);
 }
 
 fn despawn_court(mut commands: Commands, court_query: Query<Entity, With<components::Court>>) {
