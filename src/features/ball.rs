@@ -7,6 +7,7 @@ mod trajectory;
 
 use bevy::ecs::message::{MessageReader, MessageWriter};
 use bevy::prelude::*;
+use std::collections::{HashMap, HashSet};
 
 pub use components::{Ball, BallGroundState, BallVelocity};
 
@@ -139,6 +140,8 @@ fn simulate_ball(
         (&mut Transform, &mut BallVelocity, &mut BallGroundState),
         (With<Ball>, Without<crate::core::PlayerBody>),
     >,
+    player_query: Query<(Entity, &Transform), (With<crate::core::PlayerBody>, Without<Ball>)>,
+    mut player_prev_positions: Local<HashMap<Entity, Vec2>>,
 ) {
     let delta_seconds = time.delta_secs();
     if delta_seconds <= 0.0 {
@@ -177,6 +180,14 @@ fn simulate_ball(
             ball_velocity.linear.z *= drag_factor;
         }
 
+        resolve_player_foot_contacts(
+            &mut ball_transform.translation,
+            &mut ball_velocity.linear,
+            ball_ground_state.grounded,
+            delta_seconds,
+            &player_query,
+            &mut player_prev_positions,
+        );
         resolve_ball_court_bounds(&mut ball_transform.translation, &mut ball_velocity.linear);
         clamp_ball_horizontal_speed(&mut ball_velocity.linear);
 
@@ -186,6 +197,85 @@ fn simulate_ball(
             hit_ground_writer.write(crate::core::BallHitGroundEvent);
         }
     }
+}
+
+fn resolve_player_foot_contacts(
+    ball_position: &mut Vec3,
+    ball_velocity: &mut Vec3,
+    ball_grounded: bool,
+    delta_seconds: f32,
+    player_query: &Query<(Entity, &Transform), (With<crate::core::PlayerBody>, Without<Ball>)>,
+    player_prev_positions: &mut HashMap<Entity, Vec2>,
+) {
+    let mut seen_players = HashSet::new();
+    let contact_distance = crate::core::BALL_RADIUS + crate::core::PLAYER_COLLIDER_RADIUS;
+    let contact_distance_sq = contact_distance * contact_distance;
+    let can_collide_at_feet = ball_position.y <= crate::core::BALL_PLAYER_CONTACT_HEIGHT_MAX;
+
+    for (player_entity, player_transform) in player_query.iter() {
+        seen_players.insert(player_entity);
+
+        let player_position = Vec2::new(
+            player_transform.translation.x,
+            player_transform.translation.z,
+        );
+        let previous_position = player_prev_positions
+            .insert(player_entity, player_position)
+            .unwrap_or(player_position);
+        let player_displacement = player_position - previous_position;
+
+        if !can_collide_at_feet {
+            continue;
+        }
+
+        let separation = Vec2::new(
+            ball_position.x - player_position.x,
+            ball_position.z - player_position.y,
+        );
+        let distance_sq = separation.length_squared();
+        if distance_sq >= contact_distance_sq {
+            continue;
+        }
+
+        let distance = distance_sq.sqrt();
+        let normal = if distance > f32::EPSILON {
+            separation / distance
+        } else if player_displacement.length_squared() > f32::EPSILON {
+            player_displacement.normalize_or_zero()
+        } else {
+            Vec2::X
+        };
+
+        let penetration = contact_distance - distance;
+        ball_position.x += normal.x * penetration;
+        ball_position.z += normal.y * penetration;
+
+        let mut horizontal_velocity = Vec2::new(ball_velocity.x, ball_velocity.z);
+        let toward_player_speed = horizontal_velocity.dot(normal);
+        if toward_player_speed < 0.0 {
+            horizontal_velocity -= normal * toward_player_speed;
+        }
+        horizontal_velocity *= crate::core::BALL_PLAYER_CONTACT_DAMP;
+
+        let displacement_len = player_displacement.length();
+        if displacement_len > f32::EPSILON {
+            let move_direction = player_displacement / displacement_len;
+            let move_speed = displacement_len / delta_seconds.max(0.0001);
+            let moving_into_ball = move_direction.dot(normal).max(0.0);
+            let push_amount = crate::core::BALL_PLAYER_WALK_PUSH * move_speed * moving_into_ball;
+            horizontal_velocity += move_direction * push_amount;
+        } else if ball_grounded
+            && horizontal_velocity.length_squared()
+                < crate::core::BALL_PLAYER_REST_SPEED * crate::core::BALL_PLAYER_REST_SPEED
+        {
+            horizontal_velocity = Vec2::ZERO;
+        }
+
+        ball_velocity.x = horizontal_velocity.x;
+        ball_velocity.z = horizontal_velocity.y;
+    }
+
+    player_prev_positions.retain(|entity, _| seen_players.contains(entity));
 }
 
 fn resolve_ball_court_bounds(ball_position: &mut Vec3, ball_velocity: &mut Vec3) {
