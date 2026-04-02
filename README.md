@@ -80,6 +80,15 @@ See: `docs/01_design_pillars.md`
   License: CC BY 4.0
   Source: https://sketchfab.com/3d-models/sakura-tree-01-low-poly-model-147ae7d0d332456a99ec6195e9b0cd4f?utm_source=chatgpt.com
   Changes: Converted/used in-game, scaled/rotated/compressed as needed
+- "Traditional Chinese Siheyuan Courtyard" by Andertan
+  License: CC BY 4.0
+  Source: https://sketchfab.com/3d-models/traditional-chinese-siheyuan-courtyard-a18881525cfd4fe882e739c9c7cee752
+  Changes: Converted/used in-game, scaled/rotated/compressed as needed
+  Listed Contributors from link:
+  "Credits for Grass, Trees and Roof textures. Thank you!"
+  “Realtime Grass” (https://skfb.ly/6vtKS) by mfhscoobydoo is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+  “Low Poly Tree Scene Free” (https://skfb.ly/oGw7Y) by Nicholas-3D is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+  “写实比例_故宫太和殿顶部 Hall of Supreme Harmony” (https://skfb.ly/oV69n) by TRNKL is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
 
 ---
 

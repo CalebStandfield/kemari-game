@@ -5,7 +5,7 @@ edition = "2021"
 publish = false
 
 [dependencies]
-bevy = "0.18.1"
+bevy = { version = "0.18.1", features = ["jpeg"] }
 
 [profile.dev]
 opt-level = 1

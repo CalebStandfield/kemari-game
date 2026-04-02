@@ -3,8 +3,15 @@ pub const WINDOW_WIDTH: u32 = 1280;
 pub const WINDOW_HEIGHT: u32 = 720;
 
 pub const COURT_WIDTH: f32 = 18.0;
-pub const COURT_DEPTH: f32 = 12.0;
+pub const COURT_DEPTH: f32 = 18.0;
 pub const COURT_Y: f32 = 0.0;
+
+pub const COURTYARD_SCENE_PATH: &str = "models/traditional_chinese_siheyuan_courtyard.glb#Scene0";
+pub const COURTYARD_SCALE: f32 = 4.0;
+pub const COURTYARD_OFFSET_X: f32 = -1.90;
+pub const COURTYARD_OFFSET_Z: f32 = -1.0;
+pub const COURTYARD_OFFSET_Y: f32 = 0.0;
+
 pub const COURT_CORNER_TREE_PADDING: f32 = 0.25;
 pub const COURT_CORNER_TREE_SCALE: f32 = 15.0;
 pub const COURT_CORNER_TREE_SCENE_PATH: &str = "models/sakura_tree_01_-_low_poly_model.glb#Scene0";

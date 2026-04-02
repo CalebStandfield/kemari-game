@@ -20,7 +20,6 @@ fn spawn_court(
     mut commands: Commands,
     asset_server: Res<AssetServer>,
     mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
 ) {
     commands.spawn((
         components::Court,
@@ -30,15 +29,10 @@ fn spawn_court(
                     .mesh()
                     .size(crate::core::COURT_WIDTH, crate::core::COURT_DEPTH),
             ),
-        ),
-        MeshMaterial3d(materials.add(StandardMaterial {
-            base_color: Color::srgb(0.20, 0.48, 0.25),
-            perceptual_roughness: 0.95,
-            ..default()
-        })),
-        Transform::from_xyz(0.0, crate::core::COURT_Y, 0.0),
+        )
     ));
 
+    decor::spawn_courtyard(&mut commands, &asset_server);
     trees::spawn_corner_sakura_trees(&mut commands, &asset_server);
 }
 
