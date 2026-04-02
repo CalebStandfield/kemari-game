@@ -1,5 +1,5 @@
 use bevy::prelude::*;
-use bevy::window::Window;
+use bevy::window::{PresentMode, Window};
 
 use crate::core::{WINDOW_HEIGHT, WINDOW_TITLE, WINDOW_WIDTH};
 
@@ -12,6 +12,7 @@ pub fn primary_window() -> Window {
         title: WINDOW_TITLE.to_string(),
         resolution: (WINDOW_WIDTH, WINDOW_HEIGHT).into(),
         resizable: false,
+        present_mode: PresentMode::Fifo,
         ..default()
     }
 }

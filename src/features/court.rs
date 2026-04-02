@@ -29,7 +29,7 @@ fn spawn_court(
                     .mesh()
                     .size(crate::core::COURT_WIDTH, crate::core::COURT_DEPTH),
             ),
-        )
+        ),
     ));
 
     decor::spawn_courtyard(&mut commands, &asset_server);
