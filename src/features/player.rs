@@ -35,13 +35,13 @@ impl Plugin for PlayerPlugin {
 fn spawn_players(
     mut commands: Commands,
     session_config: Res<crate::core::SessionConfig>,
-    mut meshes: ResMut<Assets<Mesh>>,
-    mut materials: ResMut<Assets<StandardMaterial>>,
+    asset_server: Res<AssetServer>,
 ) {
     let player_count = session_config.player_count.clamp(1, 8);
     let ring_radius = if player_count == 1 { 0.0 } else { 3.8 };
     let ring_center_x = crate::core::BALL_START_X;
     let ring_center_z = crate::core::BALL_START_Z;
+    let player_scene: Handle<Scene> = asset_server.load(crate::core::PLAYER_SCENE_PATH);
 
     for player_index in 0..player_count {
         let angle = (player_index as f32 / player_count as f32) * TAU;
@@ -62,21 +62,23 @@ fn spawn_players(
             crate::core::PlayerBody,
             components::PlayerFacing::default(),
             components::PlayerTouchCooldowns::default(),
-            Mesh3d(meshes.add(Cuboid::new(
-                crate::core::PLAYER_WIDTH,
-                crate::core::PLAYER_HEIGHT,
-                crate::core::PLAYER_DEPTH,
-            ))),
-            MeshMaterial3d(materials.add(StandardMaterial {
-                base_color: if is_controlled {
-                    Color::srgb(0.90, 0.85, 0.35)
-                } else {
-                    Color::srgb(0.64, 0.74, 0.80)
-                },
-                ..default()
-            })),
             transform,
         ));
+
+        entity_commands.with_children(|parent| {
+            parent.spawn((
+                SceneRoot(player_scene.clone()),
+                Transform::from_xyz(
+                    crate::core::PLAYER_MODEL_OFFSET_X,
+                    crate::core::PLAYER_MODEL_OFFSET_Y,
+                    crate::core::PLAYER_MODEL_OFFSET_Z,
+                )
+                    .with_rotation(Quat::from_rotation_y(
+                        crate::core::PLAYER_MODEL_ROT_Y_DEG.to_radians()
+                    ))
+                    .with_scale(Vec3::splat(crate::core::PLAYER_MODEL_SCALE)),
+            ));
+        });
 
         if is_controlled {
             entity_commands.insert(ControlledPlayer);

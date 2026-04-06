@@ -89,6 +89,10 @@ See: `docs/01_design_pillars.md`
   “Realtime Grass” (https://skfb.ly/6vtKS) by mfhscoobydoo is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
   “Low Poly Tree Scene Free” (https://skfb.ly/oGw7Y) by Nicholas-3D is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
   “写实比例_故宫太和殿顶部 Hall of Supreme Harmony” (https://skfb.ly/oV69n) by TRNKL is licensed under Creative Commons Attribution (http://creativecommons.org/licenses/by/4.0/).
+- "KIMONO Nagase" by metamate
+  License: CC BY 4.0 Attribution-NonCommercia
+  Source: https://sketchfab.com/3d-models/kimono-nagase-fb755aa47a84473094d7f9ea90d9f88a
+  Changes: Converted/used in-game, scaled/rotated/compressed as needed
 
 ---
 

@@ -16,12 +16,16 @@ pub const COURT_CORNER_TREE_PADDING: f32 = 0.25;
 pub const COURT_CORNER_TREE_SCALE: f32 = 15.0;
 pub const COURT_CORNER_TREE_SCENE_PATH: &str = "models/sakura_tree_01_-_low_poly_model.glb#Scene0";
 
-pub const PLAYER_WIDTH: f32 = 0.8;
 pub const PLAYER_HEIGHT: f32 = 1.6;
-pub const PLAYER_DEPTH: f32 = 0.8;
-pub const PLAYER_COLLIDER_RADIUS: f32 = 0.45;
+pub const PLAYER_COLLIDER_RADIUS: f32 = 0.35;
 pub const PLAYER_Y: f32 = PLAYER_HEIGHT * 0.5;
 pub const PLAYER_SPEED: f32 = 8.0;
+pub const PLAYER_SCENE_PATH: &str = "models/kimono_nagase.glb#Scene0";
+pub const PLAYER_MODEL_SCALE: f32 = 0.11;
+pub const PLAYER_MODEL_OFFSET_Y: f32 = 0.5;
+pub const PLAYER_MODEL_OFFSET_X: f32 = 1.1;
+pub const PLAYER_MODEL_OFFSET_Z: f32 = 0.7;
+pub const PLAYER_MODEL_ROT_Y_DEG: f32 = -110.0;
 
 pub const TOUCH_COOLDOWN_KICK: f32 = 0.28;
 pub const TOUCH_COOLDOWN_HEAD: f32 = 0.45;
