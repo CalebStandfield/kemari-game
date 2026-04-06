@@ -19,13 +19,26 @@ pub const COURT_CORNER_TREE_SCENE_PATH: &str = "models/sakura_tree_01_-_low_poly
 pub const PLAYER_HEIGHT: f32 = 1.6;
 pub const PLAYER_COLLIDER_RADIUS: f32 = 0.35;
 pub const PLAYER_Y: f32 = PLAYER_HEIGHT * 0.5;
-pub const PLAYER_SPEED: f32 = 8.0;
+pub const PLAYER_SPEED: f32 = 7.5;
+pub const PLAYER_TURN_SPEED: f32 = 9.5;
 pub const PLAYER_SCENE_PATH: &str = "models/kimono_nagase.glb#Scene0";
 pub const PLAYER_MODEL_SCALE: f32 = 0.11;
 pub const PLAYER_MODEL_OFFSET_Y: f32 = 0.5;
 pub const PLAYER_MODEL_OFFSET_X: f32 = 1.1;
 pub const PLAYER_MODEL_OFFSET_Z: f32 = 0.7;
 pub const PLAYER_MODEL_ROT_Y_DEG: f32 = -110.0;
+
+pub const PLAYER_CALLOUT_HEIGHT_OFFSET: f32 = 2.4;
+pub const PLAYER_CALLOUT_SCREEN_WIDTH: f32 = 100.0;
+pub const PLAYER_CALLOUT_SCREEN_Y_OFFSET: f32 = 40.0;
+pub const PLAYER_CALLOUT_NAME_FONT_SIZE: f32 = 12.0;
+pub const PLAYER_CALLOUT_PROMPT_FONT_SIZE: f32 = 10.0;
+pub const PLAYER_CALLOUT_PULSE_SPEED: f32 = 5.5;
+pub const PLAYER_CALLOUT_NORMAL_NAME_COLOR: (f32, f32, f32) = (0.92, 0.94, 0.97);
+pub const PLAYER_CALLOUT_CALL_NAME_COLOR: (f32, f32, f32) = (1.00, 0.90, 0.42);
+pub const PLAYER_CALLOUT_PROMPT_COLOR: (f32, f32, f32) = (1.00, 0.95, 0.55);
+pub const PLAYER_CALLOUT_NORMAL_BG_ALPHA: f32 = 0.66;
+pub const PLAYER_CALLOUT_CALL_BG_ALPHA: f32 = 0.88;
 
 pub const TOUCH_COOLDOWN_KICK: f32 = 0.28;
 pub const TOUCH_COOLDOWN_HEAD: f32 = 0.45;

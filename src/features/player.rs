@@ -1,4 +1,5 @@
 mod animation;
+mod callout;
 mod components;
 mod kick;
 mod movement;
@@ -22,11 +23,22 @@ impl Plugin for PlayerPlugin {
                 (
                     tick_touch_cooldowns,
                     player_movement,
+                    update_controlled_player_call_state,
                     emit_touch_attempts,
                     resolve_player_collisions,
                 )
                     .chain()
                     .in_set(crate::core::GameplaySet::PlayerInput)
+                    .run_if(in_state(crate::core::GameState::InGame)),
+            )
+            .add_systems(
+                Update,
+                (
+                    callout::update_player_callout_positions,
+                    callout::update_player_callout_visuals,
+                )
+                    .chain()
+                    .in_set(crate::core::GameplaySet::Ui)
                     .run_if(in_state(crate::core::GameState::InGame)),
             );
     }
@@ -48,6 +60,7 @@ fn spawn_players(
         let x = ring_center_x + ring_radius * angle.cos();
         let z = ring_center_z + ring_radius * angle.sin();
         let is_controlled = player_index == 0;
+        let display_name = format!("Player {}", player_index + 1);
 
         let mut transform = Transform::from_xyz(x, crate::core::PLAYER_Y, z);
         if player_count > 1 {
@@ -60,6 +73,8 @@ fn spawn_players(
         let mut entity_commands = commands.spawn((
             Player,
             crate::core::PlayerBody,
+            components::PlayerDisplayName(display_name.clone()),
+            components::PlayerCallForBall::default(),
             components::PlayerFacing::default(),
             components::PlayerTouchCooldowns::default(),
             transform,
@@ -73,16 +88,19 @@ fn spawn_players(
                     crate::core::PLAYER_MODEL_OFFSET_Y,
                     crate::core::PLAYER_MODEL_OFFSET_Z,
                 )
-                    .with_rotation(Quat::from_rotation_y(
-                        crate::core::PLAYER_MODEL_ROT_Y_DEG.to_radians()
-                    ))
-                    .with_scale(Vec3::splat(crate::core::PLAYER_MODEL_SCALE)),
+                .with_rotation(Quat::from_rotation_y(
+                    crate::core::PLAYER_MODEL_ROT_Y_DEG.to_radians(),
+                ))
+                .with_scale(Vec3::splat(crate::core::PLAYER_MODEL_SCALE)),
             ));
         });
 
         if is_controlled {
             entity_commands.insert(ControlledPlayer);
         }
+
+        let player_entity = entity_commands.id();
+        callout::spawn_player_callout(&mut commands, player_entity, &display_name);
     }
 }
 
@@ -113,15 +131,20 @@ fn player_movement(
         return;
     }
 
+    let delta_seconds = time.delta_secs();
     let normalized_direction = direction.normalize();
-    let movement = normalized_direction * crate::core::PLAYER_SPEED * time.delta_secs();
+    let movement = normalized_direction * crate::core::PLAYER_SPEED * delta_seconds;
     let facing_direction = Vec3::new(normalized_direction.x, 0.0, normalized_direction.y);
+    let target_rotation = Transform::IDENTITY
+        .looking_to(facing_direction, Vec3::Y)
+        .rotation;
+    let turn_lerp = (crate::core::PLAYER_TURN_SPEED * delta_seconds).clamp(0.0, 1.0);
     let max_x = (crate::core::COURT_WIDTH * 0.5) - crate::core::PLAYER_COLLIDER_RADIUS;
     let max_z = (crate::core::COURT_DEPTH * 0.5) - crate::core::PLAYER_COLLIDER_RADIUS;
 
     for (mut transform, mut facing) in &mut player_query {
         facing.0 = normalized_direction;
-        transform.look_to(facing_direction, Vec3::Y);
+        transform.rotation = transform.rotation.slerp(target_rotation, turn_lerp);
         transform.translation.x += movement.x;
         transform.translation.z += movement.y;
         transform.translation.x = transform.translation.x.clamp(-max_x, max_x);
@@ -143,6 +166,17 @@ fn tick_touch_cooldowns(
         cooldowns.kick = (cooldowns.kick - delta_seconds).max(0.0);
         cooldowns.head = (cooldowns.head - delta_seconds).max(0.0);
         cooldowns.juggle = (cooldowns.juggle - delta_seconds).max(0.0);
+    }
+}
+
+fn update_controlled_player_call_state(
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    mut player_query: Query<&mut components::PlayerCallForBall, With<ControlledPlayer>>,
+) {
+    let is_calling_for_pass = keyboard_input.pressed(KeyCode::KeyL);
+
+    for mut call_for_ball in &mut player_query {
+        call_for_ball.active = is_calling_for_pass;
     }
 }
 
@@ -239,7 +273,15 @@ fn resolve_player_collisions(mut player_query: Query<&mut Transform, With<Player
     }
 }
 
-fn despawn_players(mut commands: Commands, player_query: Query<Entity, With<Player>>) {
+fn despawn_players(
+    mut commands: Commands,
+    player_query: Query<Entity, With<Player>>,
+    callout_query: Query<Entity, With<callout::PlayerCalloutRoot>>,
+) {
+    for entity in &callout_query {
+        commands.entity(entity).despawn();
+    }
+
     for entity in &player_query {
         commands.entity(entity).despawn();
     }

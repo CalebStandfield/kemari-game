@@ -8,6 +8,7 @@ mod random;
 mod ui;
 
 use bevy::prelude::*;
+pub use camera::MainCamera;
 
 pub struct SharedPlugin;
 

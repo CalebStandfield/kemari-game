@@ -6,6 +6,14 @@ pub struct Player;
 #[derive(Component)]
 pub struct ControlledPlayer;
 
+#[derive(Component, Debug, Clone)]
+pub struct PlayerDisplayName(pub String);
+
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct PlayerCallForBall {
+    pub active: bool,
+}
+
 #[derive(Component, Debug, Clone, Copy)]
 pub struct PlayerFacing(pub Vec2);
 
