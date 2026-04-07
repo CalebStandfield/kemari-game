@@ -149,38 +149,7 @@ fn resolve_touch_attempts(
                     });
                 }
                 crate::core::TouchKind::Juggle => {
-                    if let Some(target_entity) = target {
-                        let Ok(target_transform) = player_query.get(target_entity) else {
-                            whiffed_writer.write(crate::core::BallWhiffedEvent {
-                                player: attempt.player,
-                                kind: attempt.kind,
-                            });
-                            continue;
-                        };
-
-                        launch_targeted_pass(
-                            attempt.player,
-                            target_entity,
-                            attempt.kind,
-                            attempt.facing,
-                            target_transform,
-                            ball_transform,
-                            &mut ball_velocity,
-                            &mut ball_ground_state,
-                            &mut incoming_pass,
-                            &mut pass_launched_writer,
-                        );
-
-                        let quality =
-                            calculate_touch_quality(distance, profile.radius, ball_height, profile);
-                        touched_writer.write(crate::core::BallTouchedEvent {
-                            player: attempt.player,
-                            kind: attempt.kind,
-                            quality,
-                            ball_height,
-                        });
-                        continue;
-                    }
+                    let _ = target;
 
                     let in_control_range = distance <= crate::core::BALL_CONTROL_RADIUS
                         && ball_height <= crate::core::BALL_CONTROL_HEIGHT_MAX;

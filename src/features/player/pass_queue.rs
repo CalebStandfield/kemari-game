@@ -124,12 +124,6 @@ pub fn sync_queue_from_call_state(
         }
 
         if !call_for_ball.active {
-            if queue.remove_pass_request(player) {
-                debug!(
-                    "pass_queue: removed player {:?} because they stopped calling",
-                    player
-                );
-            }
             debug_state.last_reject_reason.remove(&player);
             continue;
         }
@@ -250,13 +244,12 @@ pub fn prune_invalid_queue_members(
     player_query: Query<(Entity, Option<&ControlledPlayer>, &PlayerCallForBall), With<Player>>,
 ) {
     let mut player_state = HashMap::new();
-    for (player, controlled, call_for_ball) in &player_query {
-        player_state.insert(player, (controlled.is_some(), call_for_ball.active));
+    for (player, _controlled, _call_for_ball) in &player_query {
+        player_state.insert(player, ());
     }
-    let cooldown_snapshot = queue.npc_rejoin_cooldowns.clone();
 
     queue.order.retain(|player| {
-        let Some((is_human, is_calling)) = player_state.get(player).copied() else {
+        let Some(()) = player_state.get(player).copied() else {
             debug!(
                 "pass_queue: removed stale player {:?} that no longer exists",
                 player
@@ -265,31 +258,9 @@ pub fn prune_invalid_queue_members(
             return false;
         };
 
-        if !is_calling {
-            debug!(
-                "pass_queue: removed player {:?} because they are not calling",
-                player
-            );
-            debug_state.last_reject_reason.remove(player);
-            return false;
-        }
-
         if possession.holder == Some(*player) {
             debug!(
                 "pass_queue: removed player {:?} because they control the ball",
-                player
-            );
-            debug_state.last_reject_reason.remove(player);
-            return false;
-        }
-
-        if !is_human
-            && cooldown_snapshot
-                .get(player)
-                .is_some_and(|remaining| *remaining > 0.0)
-        {
-            debug!(
-                "pass_queue: removed npc {:?} due to active cooldown",
                 player
             );
             debug_state.last_reject_reason.remove(player);

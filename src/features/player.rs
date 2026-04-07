@@ -16,6 +16,9 @@ pub use components::{
 };
 pub use pass_queue::{BallPossessionState, PlayerPassRequestQueue};
 
+#[derive(Resource, Debug, Default)]
+struct StartPossessionPending(pub bool);
+
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
@@ -24,7 +27,12 @@ impl Plugin for PlayerPlugin {
             .init_resource::<pass_queue::BallPossessionState>()
             .init_resource::<pass_queue::PassQueueDebugState>()
             .init_resource::<components::SelectedPassTarget>()
+            .init_resource::<StartPossessionPending>()
             .add_systems(OnEnter(crate::core::GameState::InGame), spawn_players)
+            .add_systems(
+                OnEnter(crate::core::GameState::InGame),
+                mark_start_possession_pending,
+            )
             .add_systems(
                 OnExit(crate::core::GameState::InGame),
                 (despawn_players, reset_selected_pass_target_state),
@@ -36,8 +44,10 @@ impl Plugin for PlayerPlugin {
             .add_systems(
                 Update,
                 (
+                    apply_start_possession,
                     tick_touch_cooldowns,
                     update_selected_pass_target_input,
+                    update_controlled_player_orientation,
                     update_controlled_player_call_state,
                     update_npc_behavior_state,
                     pass_queue::tick_npc_rejoin_cooldowns,
@@ -165,6 +175,69 @@ fn spawn_players(
     });
 }
 
+fn mark_start_possession_pending(mut pending: ResMut<StartPossessionPending>) {
+    pending.0 = true;
+}
+
+fn apply_start_possession(
+    mut pending: ResMut<StartPossessionPending>,
+    mut possession: ResMut<pass_queue::BallPossessionState>,
+    mut queue: ResMut<pass_queue::PlayerPassRequestQueue>,
+    mut controlled_query: Query<
+        (
+            Entity,
+            &Transform,
+            Option<&components::PlayerFacing>,
+            &mut components::PlayerCallForBall,
+        ),
+        (With<ControlledPlayer>, Without<crate::features::ball::Ball>),
+    >,
+    mut ball_query: Query<
+        (
+            &mut Transform,
+            &mut crate::features::ball::BallVelocity,
+            &mut crate::features::ball::BallGroundState,
+            &mut crate::features::ball::BallIncomingPass,
+        ),
+        (With<crate::features::ball::Ball>, Without<ControlledPlayer>),
+    >,
+) {
+    if !pending.0 {
+        return;
+    }
+
+    let Ok((player, player_transform, player_facing, mut call_for_ball)) =
+        controlled_query.single_mut()
+    else {
+        return;
+    };
+    let Ok((mut ball_transform, mut ball_velocity, mut ball_ground_state, mut incoming_pass)) =
+        ball_query.single_mut()
+    else {
+        return;
+    };
+
+    let facing = player_facing
+        .map(|facing| facing.0.normalize_or_zero())
+        .filter(|facing| *facing != Vec2::ZERO)
+        .unwrap_or(Vec2::new(0.0, -1.0));
+    let spawn_offset = facing * crate::core::BALL_CONTROL_FORWARD_OFFSET;
+
+    ball_transform.translation.x = player_transform.translation.x + spawn_offset.x;
+    ball_transform.translation.z = player_transform.translation.z + spawn_offset.y;
+    ball_transform.translation.y = crate::core::BALL_RADIUS;
+    ball_velocity.linear = Vec3::ZERO;
+    ball_ground_state.grounded = true;
+    incoming_pass.passer = None;
+    incoming_pass.receiver = None;
+    incoming_pass.kind = None;
+
+    possession.holder = Some(player);
+    call_for_ball.active = false;
+    queue.remove_pass_request(player);
+    pending.0 = false;
+}
+
 fn tick_touch_cooldowns(
     time: Res<Time>,
     mut player_query: Query<&mut components::PlayerTouchCooldowns, With<Player>>,
@@ -234,6 +307,73 @@ fn update_controlled_player_call_state(
         if toggle_call {
             call_for_ball.active = !call_for_ball.active;
         }
+    }
+}
+
+fn update_controlled_player_orientation(
+    time: Res<Time>,
+    keyboard_input: Res<ButtonInput<KeyCode>>,
+    possession: Res<pass_queue::BallPossessionState>,
+    selected_target: Res<components::SelectedPassTarget>,
+    ball_query: Query<&Transform, With<crate::features::ball::Ball>>,
+    target_query: Query<
+        &Transform,
+        (
+            With<Player>,
+            Without<ControlledPlayer>,
+            Without<crate::features::ball::Ball>,
+        ),
+    >,
+    mut controlled_query: Query<
+        (Entity, &mut Transform, &mut components::PlayerFacing),
+        (With<ControlledPlayer>, Without<crate::features::ball::Ball>),
+    >,
+) {
+    let ball_position = ball_query
+        .single()
+        .map(|transform| transform.translation)
+        .ok();
+    let selected_target_position = selected_target
+        .entity
+        .and_then(|target| target_query.get(target).ok())
+        .map(|target_transform| target_transform.translation);
+    let delta_seconds = time.delta_secs();
+    let turn_lerp = (crate::core::PLAYER_TURN_SPEED * delta_seconds).clamp(0.0, 1.0);
+    let pass_pressed = keyboard_input.pressed(KeyCode::KeyK)
+        || keyboard_input.pressed(KeyCode::KeyH)
+        || keyboard_input.pressed(KeyCode::KeyJ);
+
+    for (entity, mut transform, mut facing) in &mut controlled_query {
+        let focus_position = if possession.holder == Some(entity) {
+            if pass_pressed {
+                selected_target_position.or(ball_position)
+            } else {
+                ball_position
+            }
+        } else {
+            ball_position
+        };
+
+        let Some(focus_position) = focus_position else {
+            continue;
+        };
+
+        let current_position = transform.translation;
+        let look_vector = Vec2::new(
+            focus_position.x - current_position.x,
+            focus_position.z - current_position.z,
+        )
+        .normalize_or_zero();
+
+        if look_vector == Vec2::ZERO {
+            continue;
+        }
+
+        facing.0 = look_vector;
+        let target_rotation = Transform::IDENTITY
+            .looking_to(Vec3::new(look_vector.x, 0.0, look_vector.y), Vec3::Y)
+            .rotation;
+        transform.rotation = transform.rotation.slerp(target_rotation, turn_lerp);
     }
 }
 
@@ -341,9 +481,14 @@ fn update_npc_behavior_state(
         }
 
         if behavior.call_decision_timer.just_finished() {
-            let signal_phase = time.elapsed_secs() * 0.9 + slot.index as f32 * 1.37;
-            let call_signal = (signal_phase.sin() * 0.5 + 0.5).clamp(0.0, 1.0);
-            call_for_ball.active = call_signal > crate::core::NPC_CALL_SIGNAL_THRESHOLD;
+            if call_for_ball.active {
+                // Force periodic release so NPCs can leave the pass queue naturally.
+                call_for_ball.active = false;
+            } else {
+                let signal_phase = time.elapsed_secs() * 0.9 + slot.index as f32 * 1.37;
+                let call_signal = (signal_phase.sin() * 0.5 + 0.5).clamp(0.0, 1.0);
+                call_for_ball.active = call_signal > crate::core::NPC_CALL_SIGNAL_THRESHOLD;
+            }
         }
 
         behavior.state = if call_for_ball.active {
@@ -443,7 +588,7 @@ fn emit_human_touch_attempts(
             player: player_entity,
             kind: crate::core::TouchKind::Juggle,
             facing,
-            target: chosen_target,
+            target: None,
         });
     }
 }
@@ -459,7 +604,7 @@ fn emit_npc_touch_attempts(
             Entity,
             &Transform,
             &components::PlayerSlot,
-            &components::PlayerFacing,
+            &mut components::PlayerFacing,
             &mut components::PlayerTouchCooldowns,
             &mut components::NpcBehavior,
         ),
@@ -481,7 +626,7 @@ fn emit_npc_touch_attempts(
         ));
     }
 
-    for (entity, transform, slot, facing, mut cooldowns, mut behavior) in &mut npc_query {
+    for (entity, transform, slot, mut facing, mut cooldowns, mut behavior) in &mut npc_query {
         if possession.holder != Some(entity) {
             continue;
         }
@@ -510,6 +655,17 @@ fn emit_npc_touch_attempts(
 
         let to_target = target_position - position;
         let distance = to_target.length();
+        let pass_direction = to_target.normalize_or_zero();
+        if pass_direction != Vec2::ZERO {
+            facing.0 = pass_direction;
+            let forward = transform.forward().as_vec3();
+            let forward_xz = Vec2::new(forward.x, forward.z).normalize_or_zero();
+            let alignment = forward_xz.dot(pass_direction);
+            if alignment < 0.92 {
+                continue;
+            }
+        }
+
         let phase = (time.elapsed_secs() * 0.6 + slot.index as f32 * 0.77).sin() * 0.5 + 0.5;
         let touch_kind = choose_npc_touch_kind(distance, ball_height, phase);
 
@@ -533,7 +689,11 @@ fn emit_npc_touch_attempts(
             player: entity,
             kind: touch_kind,
             facing: facing.0,
-            target: Some(target),
+            target: if touch_kind == crate::core::TouchKind::Juggle {
+                None
+            } else {
+                Some(target)
+            },
         });
 
         behavior.state = components::NpcBehaviorState::Passing;
@@ -565,42 +725,17 @@ fn apply_zone_movement(
         return;
     }
 
-    let max_x = (crate::core::COURT_WIDTH * 0.5) - crate::core::PLAYER_COLLIDER_RADIUS;
-    let max_z = (crate::core::COURT_DEPTH * 0.5) - crate::core::PLAYER_COLLIDER_RADIUS;
     let turn_lerp = (crate::core::PLAYER_TURN_SPEED * delta_seconds).clamp(0.0, 1.0);
 
-    for (mut transform, home, zone, desired_move, mut facing, controlled) in &mut player_query {
-        let current = Vec2::new(transform.translation.x, transform.translation.z);
-        let to_home = home.0 - current;
-
-        let mut velocity = desired_move.0;
-        if to_home.length() > zone.0 {
-            velocity += to_home.normalize_or_zero() * crate::core::PLAYER_ZONE_RETURN_SPEED;
-        }
-
-        if controlled.is_some() {
-            velocity *= 0.65;
-        }
-
-        let mut step = velocity * delta_seconds;
-        let max_step = crate::core::PLAYER_MAX_MOVE_PER_FRAME;
-        if step.length() > max_step {
-            step = step.normalize() * max_step;
-        }
-
-        let mut next = current + step;
-        next = clamp_to_zone(home.0, next, zone.0);
-        next.x = next.x.clamp(-max_x, max_x);
-        next.y = next.y.clamp(-max_z, max_z);
-
-        transform.translation.x = next.x;
-        transform.translation.z = next.y;
+    for (mut transform, home, _zone, _desired_move, facing, _controlled) in &mut player_query {
+        // All players stay planted on their assigned court spot.
+        transform.translation.x = home.0.x;
+        transform.translation.z = home.0.y;
         transform.translation.y = crate::core::PLAYER_Y;
 
-        let move_dir = velocity.normalize_or_zero();
-        if move_dir.length_squared() > 0.0 {
-            facing.0 = move_dir;
-            let facing_direction = Vec3::new(move_dir.x, 0.0, move_dir.y);
+        let rotation_dir = facing.0.normalize_or_zero();
+        if rotation_dir.length_squared() > 0.0 {
+            let facing_direction = Vec3::new(rotation_dir.x, 0.0, rotation_dir.y);
             let target_rotation = Transform::IDENTITY
                 .looking_to(facing_direction, Vec3::Y)
                 .rotation;
@@ -609,47 +744,8 @@ fn apply_zone_movement(
     }
 }
 
-fn resolve_player_collisions(mut player_query: Query<&mut Transform, With<Player>>) {
-    let min_distance = crate::core::PLAYER_COLLIDER_RADIUS * 2.0;
-    let min_distance_squared = min_distance * min_distance;
-    let max_x = (crate::core::COURT_WIDTH * 0.5) - crate::core::PLAYER_COLLIDER_RADIUS;
-    let max_z = (crate::core::COURT_DEPTH * 0.5) - crate::core::PLAYER_COLLIDER_RADIUS;
-
-    for _ in 0..2 {
-        let mut pairs = player_query.iter_combinations_mut();
-
-        while let Some([mut player_a, mut player_b]) = pairs.fetch_next() {
-            let separation = Vec2::new(
-                player_a.translation.x - player_b.translation.x,
-                player_a.translation.z - player_b.translation.z,
-            );
-            let separation_squared = separation.length_squared();
-
-            if separation_squared >= min_distance_squared {
-                continue;
-            }
-
-            let normal = if separation_squared > f32::EPSILON {
-                separation / separation_squared.sqrt()
-            } else {
-                Vec2::X
-            };
-            let penetration = min_distance - separation_squared.sqrt();
-            let correction = normal * (penetration * 0.5);
-
-            player_a.translation.x += correction.x;
-            player_a.translation.z += correction.y;
-            player_b.translation.x -= correction.x;
-            player_b.translation.z -= correction.y;
-
-            player_a.translation.x = player_a.translation.x.clamp(-max_x, max_x);
-            player_a.translation.z = player_a.translation.z.clamp(-max_z, max_z);
-            player_b.translation.x = player_b.translation.x.clamp(-max_x, max_x);
-            player_b.translation.z = player_b.translation.z.clamp(-max_z, max_z);
-            player_a.translation.y = crate::core::PLAYER_Y;
-            player_b.translation.y = crate::core::PLAYER_Y;
-        }
-    }
+fn resolve_player_collisions() {
+    // Players are intentionally stationary in Option A.
 }
 
 fn despawn_players(

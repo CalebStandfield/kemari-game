@@ -111,6 +111,7 @@ pub fn update_player_callout_positions(
 
 pub fn update_player_callout_visuals(
     time: Res<Time>,
+    pass_queue: Res<super::pass_queue::PlayerPassRequestQueue>,
     selected_target: Res<super::components::SelectedPassTarget>,
     player_query: Query<(&PlayerDisplayName, &PlayerCallForBall), With<Player>>,
     mut callout_query: Query<
@@ -145,17 +146,19 @@ pub fn update_player_callout_visuals(
             continue;
         };
         let is_selected_target = selected_target.entity == Some(anchor.player);
+        let is_queued = pass_queue.order.contains(&anchor.player);
+        let is_calling_or_queued = call_for_ball.active || is_queued;
 
         if let Ok((mut name_text, mut name_color)) = name_text_query.get_mut(parts.name_text) {
             **name_text = display_name.0.clone();
-            let base_name_color = if call_for_ball.active {
+            let base_name_color = if is_calling_or_queued {
                 color_from_tuple(crate::core::PLAYER_CALLOUT_CALL_NAME_COLOR)
             } else if is_selected_target {
                 color_from_tuple(crate::core::PLAYER_CALLOUT_SELECTED_NAME_COLOR)
             } else {
                 color_from_tuple(crate::core::PLAYER_CALLOUT_NORMAL_NAME_COLOR)
             };
-            let pulsed_name_color = if call_for_ball.active {
+            let pulsed_name_color = if is_calling_or_queued {
                 base_name_color.with_luminance(0.65 + pulse * 0.22)
             } else {
                 base_name_color
@@ -166,7 +169,7 @@ pub fn update_player_callout_visuals(
         if let Ok((mut prompt_visibility, mut prompt_color)) =
             prompt_text_query.get_mut(parts.prompt_text)
         {
-            if call_for_ball.active {
+            if is_calling_or_queued {
                 *prompt_visibility = Visibility::Visible;
                 *prompt_color = TextColor(
                     color_from_tuple(crate::core::PLAYER_CALLOUT_PROMPT_COLOR)
@@ -179,7 +182,7 @@ pub fn update_player_callout_visuals(
             }
         }
 
-        if call_for_ball.active {
+        if is_calling_or_queued {
             *background_color = BackgroundColor(Color::srgba(
                 0.20,
                 0.15 + pulse * 0.12,
