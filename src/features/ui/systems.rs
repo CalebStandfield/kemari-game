@@ -1,14 +1,39 @@
 use bevy::prelude::*;
 
+use crate::features::player::{PlayerDisplayName, PlayerPassRequestQueue};
 use crate::features::ritual::EleganceMeter;
 use crate::features::scoring::ChainCounter;
-use crate::features::ui::hud::{ChainText, EleganceText};
+use crate::features::ui::hud::{ChainText, EleganceText, PassQueueText};
 
 pub fn update_gameplay_hud(
     chain: Res<ChainCounter>,
     elegance: Res<EleganceMeter>,
-    mut chain_text_query: Query<&mut Text, (With<ChainText>, Without<EleganceText>)>,
-    mut elegance_text_query: Query<&mut Text, (With<EleganceText>, Without<ChainText>)>,
+    pass_queue: Res<PlayerPassRequestQueue>,
+    player_names: Query<&PlayerDisplayName>,
+    mut chain_text_query: Query<
+        &mut Text,
+        (
+            With<ChainText>,
+            Without<EleganceText>,
+            Without<PassQueueText>,
+        ),
+    >,
+    mut elegance_text_query: Query<
+        &mut Text,
+        (
+            With<EleganceText>,
+            Without<ChainText>,
+            Without<PassQueueText>,
+        ),
+    >,
+    mut pass_queue_text_query: Query<
+        &mut Text,
+        (
+            With<PassQueueText>,
+            Without<ChainText>,
+            Without<EleganceText>,
+        ),
+    >,
 ) {
     if chain.is_changed() {
         for mut text in &mut chain_text_query {
@@ -20,5 +45,22 @@ pub fn update_gameplay_hud(
         for mut text in &mut elegance_text_query {
             **text = format!("Elegance: {:.1}", elegance.value);
         }
+    }
+
+    let mut lines = String::from("Pass Queue:");
+    if pass_queue.order.is_empty() {
+        lines.push_str("\n(empty)");
+    } else {
+        for (index, player_entity) in pass_queue.order.iter().enumerate() {
+            let name = player_names
+                .get(*player_entity)
+                .map(|display_name| display_name.0.as_str())
+                .unwrap_or("Unknown");
+            lines.push_str(&format!("\n{}. {}", index + 1, name));
+        }
+    }
+
+    for mut text in &mut pass_queue_text_query {
+        **text = lines.clone();
     }
 }

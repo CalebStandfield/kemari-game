@@ -3,6 +3,7 @@ mod callout;
 mod components;
 mod kick;
 mod movement;
+mod pass_queue;
 mod spawn;
 mod systems;
 
@@ -10,25 +11,42 @@ use bevy::ecs::message::MessageWriter;
 use bevy::prelude::*;
 use std::f32::consts::TAU;
 
-pub use components::{ControlledPlayer, Player};
+pub use components::{ControlledPlayer, Player, PlayerDisplayName};
+pub use pass_queue::PlayerPassRequestQueue;
 
 pub struct PlayerPlugin;
 
 impl Plugin for PlayerPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(crate::core::GameState::InGame), spawn_players)
+        app.init_resource::<pass_queue::PlayerPassRequestQueue>()
+            .init_resource::<pass_queue::BallPossessionState>()
+            .init_resource::<pass_queue::PassQueueDebugState>()
+            .add_systems(OnEnter(crate::core::GameState::InGame), spawn_players)
             .add_systems(OnExit(crate::core::GameState::InGame), despawn_players)
+            .add_systems(
+                OnExit(crate::core::GameState::InGame),
+                pass_queue::reset_pass_queue_state,
+            )
             .add_systems(
                 Update,
                 (
                     tick_touch_cooldowns,
                     player_movement,
                     update_controlled_player_call_state,
+                    pass_queue::tick_npc_rejoin_cooldowns,
+                    pass_queue::sync_queue_from_call_state,
+                    pass_queue::prune_invalid_queue_members,
                     emit_touch_attempts,
                     resolve_player_collisions,
                 )
                     .chain()
                     .in_set(crate::core::GameplaySet::PlayerInput)
+                    .run_if(in_state(crate::core::GameState::InGame)),
+            )
+            .add_systems(
+                Update,
+                pass_queue::apply_ball_possession_to_queue
+                    .in_set(crate::core::GameplaySet::Scoring)
                     .run_if(in_state(crate::core::GameState::InGame)),
             )
             .add_systems(
@@ -171,12 +189,14 @@ fn tick_touch_cooldowns(
 
 fn update_controlled_player_call_state(
     keyboard_input: Res<ButtonInput<KeyCode>>,
-    mut player_query: Query<&mut components::PlayerCallForBall, With<ControlledPlayer>>,
+    possession: Res<pass_queue::BallPossessionState>,
+    mut player_query: Query<(Entity, &mut components::PlayerCallForBall), With<ControlledPlayer>>,
 ) {
-    let is_calling_for_pass = keyboard_input.pressed(KeyCode::KeyL);
+    let wants_to_call = keyboard_input.pressed(KeyCode::KeyL);
 
-    for mut call_for_ball in &mut player_query {
-        call_for_ball.active = is_calling_for_pass;
+    for (player, mut call_for_ball) in &mut player_query {
+        let has_ball_control = possession.holder == Some(player);
+        call_for_ball.active = wants_to_call && !has_ball_control;
     }
 }
 

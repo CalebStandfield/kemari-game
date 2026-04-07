@@ -9,9 +9,6 @@ pub struct StartScreenRoot;
 #[derive(Component)]
 pub struct StartScreenSelectionText;
 
-#[derive(Component)]
-pub struct InGameHudRoot;
-
 #[derive(Resource, Debug, Clone, Copy)]
 pub struct StartScreenSelection {
     pub player_count: usize,
@@ -54,6 +51,30 @@ pub fn spawn_start_screen(mut commands: Commands, session_config: Res<SessionCon
                 TextFont::from_font_size(22.0),
                 TextColor(Color::srgb(0.72, 0.78, 0.82)),
             ));
+
+            parent
+                .spawn(Node {
+                    position_type: PositionType::Absolute,
+                    right: px(16),
+                    bottom: px(16),
+                    flex_direction: FlexDirection::Column,
+                    row_gap: px(6),
+                    padding: UiRect::all(px(10)),
+                    ..default()
+                })
+                .insert(BackgroundColor(Color::srgba(0.03, 0.04, 0.06, 0.72)))
+                .with_children(|controls| {
+                    controls.spawn((
+                        Text::new("Match Controls"),
+                        TextFont::from_font_size(20.0),
+                        TextColor(Color::srgb(0.95, 0.92, 0.80)),
+                    ));
+                    controls.spawn((
+                        Text::new("W/A/S/D Move, K/H/J Touches, L Call, Esc Menu, R Reset"),
+                        TextFont::from_font_size(16.0),
+                        TextColor(Color::srgb(0.74, 0.80, 0.84)),
+                    ));
+                });
         });
 }
 
@@ -103,41 +124,6 @@ pub fn despawn_start_screen(
     }
 
     commands.remove_resource::<StartScreenSelection>();
-}
-
-pub fn spawn_in_game_hud(mut commands: Commands) {
-    commands
-        .spawn((
-            Node {
-                position_type: PositionType::Absolute,
-                left: px(16),
-                top: px(16),
-                flex_direction: FlexDirection::Column,
-                row_gap: px(8),
-                padding: UiRect::all(px(10)),
-                ..default()
-            },
-            BackgroundColor(Color::srgba(0.03, 0.04, 0.06, 0.72)),
-            InGameHudRoot,
-        ))
-        .with_children(|parent| {
-            parent.spawn((
-                Text::new("Match Controls"),
-                TextFont::from_font_size(20.0),
-                TextColor(Color::srgb(0.95, 0.92, 0.80)),
-            ));
-            parent.spawn((
-                Text::new("K/H/J = Touches, Esc = Start Screen, R = Reset Match"),
-                TextFont::from_font_size(16.0),
-                TextColor(Color::srgb(0.74, 0.80, 0.84)),
-            ));
-        });
-}
-
-pub fn despawn_in_game_hud(mut commands: Commands, root_query: Query<Entity, With<InGameHudRoot>>) {
-    for entity in &root_query {
-        commands.entity(entity).despawn();
-    }
 }
 
 pub fn handle_in_game_hotkeys(
