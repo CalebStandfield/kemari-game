@@ -12,6 +12,7 @@ pub struct PlayerTouchAttemptEvent {
     pub player: Entity,
     pub kind: TouchKind,
     pub facing: Vec2,
+    pub target: Option<Entity>,
 }
 
 #[derive(Message, Debug, Clone, Copy)]
@@ -30,6 +31,13 @@ pub struct BallWhiffedEvent {
 
 #[derive(Message, Debug, Clone, Copy)]
 pub struct BallHitGroundEvent;
+
+#[derive(Message, Debug, Clone, Copy)]
+pub struct BallPassLaunchedEvent {
+    pub passer: Entity,
+    pub receiver: Entity,
+    pub kind: TouchKind,
+}
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
 pub enum PassTargetAccuracy {

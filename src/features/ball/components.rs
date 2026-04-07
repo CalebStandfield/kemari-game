@@ -24,3 +24,10 @@ impl Default for BallGroundState {
         Self { grounded: true }
     }
 }
+
+#[derive(Component, Debug, Clone, Copy, Default)]
+pub struct BallIncomingPass {
+    pub passer: Option<Entity>,
+    pub receiver: Option<Entity>,
+    pub kind: Option<crate::core::TouchKind>,
+}

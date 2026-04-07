@@ -111,6 +111,7 @@ pub fn update_player_callout_positions(
 
 pub fn update_player_callout_visuals(
     time: Res<Time>,
+    selected_target: Res<super::components::SelectedPassTarget>,
     player_query: Query<(&PlayerDisplayName, &PlayerCallForBall), With<Player>>,
     mut callout_query: Query<
         (
@@ -143,11 +144,14 @@ pub fn update_player_callout_visuals(
         let Ok((display_name, call_for_ball)) = player_query.get(anchor.player) else {
             continue;
         };
+        let is_selected_target = selected_target.entity == Some(anchor.player);
 
         if let Ok((mut name_text, mut name_color)) = name_text_query.get_mut(parts.name_text) {
             **name_text = display_name.0.clone();
             let base_name_color = if call_for_ball.active {
                 color_from_tuple(crate::core::PLAYER_CALLOUT_CALL_NAME_COLOR)
+            } else if is_selected_target {
+                color_from_tuple(crate::core::PLAYER_CALLOUT_SELECTED_NAME_COLOR)
             } else {
                 color_from_tuple(crate::core::PLAYER_CALLOUT_NORMAL_NAME_COLOR)
             };
@@ -183,6 +187,14 @@ pub fn update_player_callout_visuals(
                 crate::core::PLAYER_CALLOUT_CALL_BG_ALPHA,
             ));
             node.width = Val::Px(crate::core::PLAYER_CALLOUT_SCREEN_WIDTH + pulse * 10.0);
+        } else if is_selected_target {
+            *background_color = BackgroundColor(Color::srgba(
+                0.10,
+                0.18 + pulse * 0.06,
+                0.24,
+                crate::core::PLAYER_CALLOUT_NORMAL_BG_ALPHA + 0.10,
+            ));
+            node.width = Val::Px(crate::core::PLAYER_CALLOUT_SCREEN_WIDTH + 6.0);
         } else {
             *background_color = BackgroundColor(Color::srgba(
                 0.03,

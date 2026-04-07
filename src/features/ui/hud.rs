@@ -13,6 +13,9 @@ pub struct EleganceText;
 #[derive(Component)]
 pub struct PassQueueText;
 
+#[derive(Component)]
+pub struct SelectedTargetText;
+
 pub fn spawn_gameplay_hud(mut commands: Commands) {
     commands
         .spawn((
@@ -46,6 +49,12 @@ pub fn spawn_gameplay_hud(mut commands: Commands) {
                 TextFont::from_font_size(17.0),
                 TextColor(Color::srgb(0.88, 0.91, 0.96)),
                 PassQueueText,
+            ));
+            parent.spawn((
+                Text::new("Selected Target: (none)"),
+                TextFont::from_font_size(17.0),
+                TextColor(Color::srgb(0.68, 0.84, 1.0)),
+                SelectedTargetText,
             ));
         });
 }

@@ -163,6 +163,7 @@ pub fn sync_queue_from_call_state(
 pub fn apply_ball_possession_to_queue(
     mut touched_reader: MessageReader<crate::core::BallTouchedEvent>,
     mut grounded_reader: MessageReader<crate::core::BallHitGroundEvent>,
+    mut pass_launched_reader: MessageReader<crate::core::BallPassLaunchedEvent>,
     mut pass_resolution_writer: MessageWriter<crate::core::PassResolutionEvent>,
     mut queue: ResMut<PlayerPassRequestQueue>,
     mut possession: ResMut<BallPossessionState>,
@@ -223,6 +224,16 @@ pub fn apply_ball_possession_to_queue(
             debug!(
                 "pass_queue: pass {:?} -> {:?}, expected {:?}, {:?}, x{:.2}",
                 passer, player, expected_target, accuracy, elegance_multiplier
+            );
+        }
+    }
+
+    for pass_launched in pass_launched_reader.read() {
+        if possession.holder == Some(pass_launched.passer) {
+            possession.holder = None;
+            debug!(
+                "pass_queue: possession released by pass {:?} -> {:?} ({:?})",
+                pass_launched.passer, pass_launched.receiver, pass_launched.kind
             );
         }
     }
