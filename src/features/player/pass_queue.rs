@@ -1,4 +1,4 @@
-use bevy::ecs::message::MessageReader;
+use bevy::ecs::message::{MessageReader, MessageWriter};
 use bevy::log::debug;
 use bevy::prelude::*;
 use std::collections::{HashMap, VecDeque};
@@ -163,6 +163,7 @@ pub fn sync_queue_from_call_state(
 pub fn apply_ball_possession_to_queue(
     mut touched_reader: MessageReader<crate::core::BallTouchedEvent>,
     mut grounded_reader: MessageReader<crate::core::BallHitGroundEvent>,
+    mut pass_resolution_writer: MessageWriter<crate::core::PassResolutionEvent>,
     mut queue: ResMut<PlayerPassRequestQueue>,
     mut possession: ResMut<BallPossessionState>,
     mut debug_state: ResMut<PassQueueDebugState>,
@@ -172,6 +173,8 @@ pub fn apply_ball_possession_to_queue(
     for touched in touched_reader.read() {
         let player = touched.player;
         let is_human = controlled_query.get(player).is_ok();
+        let previous_holder = possession.holder;
+        let expected_target = queue.order.front().copied();
 
         possession.holder = Some(player);
 
@@ -197,6 +200,29 @@ pub fn apply_ball_possession_to_queue(
                 "pass_queue: npc {:?} cooldown started for {:.2}s",
                 player,
                 crate::core::PLAYER_QUEUE_TIME_WAIT
+            );
+        }
+
+        if let Some(passer) = previous_holder.filter(|previous| *previous != player) {
+            let (accuracy, elegance_multiplier) = match expected_target {
+                Some(expected) if expected == player => {
+                    (crate::core::PassTargetAccuracy::CorrectQueueTarget, 1.25)
+                }
+                Some(_) => (crate::core::PassTargetAccuracy::IncorrectQueueTarget, 0.75),
+                None => (crate::core::PassTargetAccuracy::NoQueueTarget, 1.0),
+            };
+
+            pass_resolution_writer.write(crate::core::PassResolutionEvent {
+                passer,
+                receiver: player,
+                expected_target,
+                accuracy,
+                elegance_multiplier,
+            });
+
+            debug!(
+                "pass_queue: pass {:?} -> {:?}, expected {:?}, {:?}, x{:.2}",
+                passer, player, expected_target, accuracy, elegance_multiplier
             );
         }
     }

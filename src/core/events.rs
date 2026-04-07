@@ -31,6 +31,22 @@ pub struct BallWhiffedEvent {
 #[derive(Message, Debug, Clone, Copy)]
 pub struct BallHitGroundEvent;
 
+#[derive(Debug, Clone, Copy, Eq, PartialEq, Hash)]
+pub enum PassTargetAccuracy {
+    CorrectQueueTarget,
+    IncorrectQueueTarget,
+    NoQueueTarget,
+}
+
+#[derive(Message, Debug, Clone, Copy)]
+pub struct PassResolutionEvent {
+    pub passer: Entity,
+    pub receiver: Entity,
+    pub expected_target: Option<Entity>,
+    pub accuracy: PassTargetAccuracy,
+    pub elegance_multiplier: f32,
+}
+
 #[derive(SystemSet, Debug, Clone, Eq, PartialEq, Hash)]
 pub enum GameplaySet {
     PlayerInput,

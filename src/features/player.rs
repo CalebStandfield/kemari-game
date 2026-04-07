@@ -192,11 +192,18 @@ fn update_controlled_player_call_state(
     possession: Res<pass_queue::BallPossessionState>,
     mut player_query: Query<(Entity, &mut components::PlayerCallForBall), With<ControlledPlayer>>,
 ) {
-    let wants_to_call = keyboard_input.pressed(KeyCode::KeyL);
+    let toggle_call = keyboard_input.just_pressed(KeyCode::KeyL);
 
     for (player, mut call_for_ball) in &mut player_query {
         let has_ball_control = possession.holder == Some(player);
-        call_for_ball.active = wants_to_call && !has_ball_control;
+        if has_ball_control {
+            call_for_ball.active = false;
+            continue;
+        }
+
+        if toggle_call {
+            call_for_ball.active = !call_for_ball.active;
+        }
     }
 }
 

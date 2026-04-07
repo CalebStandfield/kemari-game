@@ -70,7 +70,7 @@ pub fn spawn_start_screen(mut commands: Commands, session_config: Res<SessionCon
                         TextColor(Color::srgb(0.95, 0.92, 0.80)),
                     ));
                     controls.spawn((
-                        Text::new("W/A/S/D Move, K/H/J Touches, L Call, Esc Menu, R Reset"),
+                        Text::new("W/A/S/D Move, K/H/J Touches, L Toggle Call, Esc Menu, R Reset"),
                         TextFont::from_font_size(16.0),
                         TextColor(Color::srgb(0.74, 0.80, 0.84)),
                     ));

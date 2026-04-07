@@ -26,6 +26,7 @@ impl Plugin for CorePlugin {
             .add_message::<BallTouchedEvent>()
             .add_message::<BallWhiffedEvent>()
             .add_message::<BallHitGroundEvent>()
+            .add_message::<PassResolutionEvent>()
             .configure_sets(
                 Update,
                 (

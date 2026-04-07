@@ -1,5 +1,6 @@
 use bevy::ecs::message::MessageReader;
 use bevy::prelude::*;
+use std::collections::{HashMap, VecDeque};
 
 use crate::features::ritual::patterns::TouchPatternState;
 use crate::features::ritual::rhythm::EleganceMeter;
@@ -7,15 +8,27 @@ use crate::features::ritual::rules::touch_base_reward;
 
 pub fn update_elegance(
     mut touched_reader: MessageReader<crate::core::BallTouchedEvent>,
+    mut pass_resolution_reader: MessageReader<crate::core::PassResolutionEvent>,
     mut whiffed_reader: MessageReader<crate::core::BallWhiffedEvent>,
     mut grounded_reader: MessageReader<crate::core::BallHitGroundEvent>,
     mut pattern_state: ResMut<TouchPatternState>,
     mut elegance: ResMut<EleganceMeter>,
 ) {
     let mut delta = 0.0f32;
+    let mut pass_multipliers: HashMap<Entity, VecDeque<f32>> = HashMap::new();
+
+    for pass_resolution in pass_resolution_reader.read() {
+        let _passer = pass_resolution.passer;
+        let _expected_target = pass_resolution.expected_target;
+        let _accuracy = pass_resolution.accuracy;
+        pass_multipliers
+            .entry(pass_resolution.receiver)
+            .or_default()
+            .push_back(pass_resolution.elegance_multiplier);
+    }
 
     for touched in touched_reader.read() {
-        let _player = touched.player;
+        let player = touched.player;
         let base = touch_base_reward(touched.kind);
         let same_as_last = pattern_state.last_touch == Some(touched.kind);
         let variety_bonus = if same_as_last { 0.0 } else { 0.7 };
@@ -35,9 +48,14 @@ pub fn update_elegance(
             0.0
         };
         let quality_scale = 0.6 + touched.quality * 0.4;
+        let pass_multiplier = pass_multipliers
+            .get_mut(&player)
+            .and_then(|queue| queue.pop_front())
+            .unwrap_or(1.0);
 
         delta += (base + variety_bonus - repeat_penalty - panic_penalty - too_high_penalty)
-            * quality_scale;
+            * quality_scale
+            * pass_multiplier;
 
         if same_as_last {
             pattern_state.repeat_count = pattern_state.repeat_count.saturating_add(1);
