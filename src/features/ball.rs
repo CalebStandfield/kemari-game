@@ -6,19 +6,43 @@ mod systems;
 mod trajectory;
 
 use bevy::ecs::message::{MessageReader, MessageWriter};
+use bevy::log::debug;
 use bevy::prelude::*;
 use std::collections::{HashMap, HashSet};
 
-pub use components::{Ball, BallGroundState, BallIncomingPass, BallVelocity};
+pub use components::{
+    Ball, BallActionPhase, BallActionState, BallGroundState, BallGroundedTimeout, BallIncomingPass,
+    BallVelocity,
+};
+
+#[derive(Resource, Debug, Clone)]
+struct RallyResetState {
+    active: bool,
+    timer: Timer,
+}
+
+impl Default for RallyResetState {
+    fn default() -> Self {
+        Self {
+            active: false,
+            timer: Timer::from_seconds(crate::core::RALLY_RESET_DELAY, TimerMode::Once),
+        }
+    }
+}
 
 pub struct BallPlugin;
 
 impl Plugin for BallPlugin {
     fn build(&self, app: &mut App) {
-        app.add_systems(OnEnter(crate::core::GameState::InGame), spawn_ball)
+        app.init_resource::<RallyResetState>()
+            .add_systems(OnEnter(crate::core::GameState::InGame), spawn_ball)
             .add_systems(
                 Update,
-                (resolve_touch_attempts, simulate_ball)
+                (
+                    resolve_touch_attempts,
+                    simulate_ball,
+                    update_ball_action_pipeline,
+                )
                     .chain()
                     .in_set(crate::core::GameplaySet::BallResolve)
                     .run_if(in_state(crate::core::GameState::InGame)),
@@ -34,8 +58,10 @@ fn spawn_ball(
 ) {
     commands.spawn((
         Ball,
+        BallActionState::default(),
         BallVelocity::default(),
         BallGroundState::default(),
+        BallGroundedTimeout::default(),
         BallIncomingPass::default(),
         Mesh3d(meshes.add(Sphere::new(crate::core::BALL_RADIUS))),
         MeshMaterial3d(materials.add(StandardMaterial {
@@ -71,12 +97,18 @@ fn resolve_touch_attempts(
             &mut BallVelocity,
             &mut BallGroundState,
             &mut BallIncomingPass,
+            &mut BallActionState,
         ),
         (With<Ball>, Without<crate::core::PlayerBody>),
     >,
 ) {
-    let Ok((ball_transform, mut ball_velocity, mut ball_ground_state, mut incoming_pass)) =
-        ball_query.single_mut()
+    let Ok((
+        ball_transform,
+        mut ball_velocity,
+        mut ball_ground_state,
+        mut incoming_pass,
+        mut action_state,
+    )) = ball_query.single_mut()
     else {
         return;
     };
@@ -136,6 +168,7 @@ fn resolve_touch_attempts(
                         &mut ball_velocity,
                         &mut ball_ground_state,
                         &mut incoming_pass,
+                        &mut action_state,
                         &mut pass_launched_writer,
                     );
 
@@ -165,10 +198,16 @@ fn resolve_touch_attempts(
                     horizontal *= crate::core::TOUCH_JUGGLE_HORIZONTAL_DAMP;
                     ball_velocity.linear.x = horizontal.x;
                     ball_velocity.linear.z = horizontal.y;
-                    ball_velocity.linear.y =
-                        (ball_velocity.linear.y * 0.25).max(crate::core::TOUCH_UP_IMPULSE_JUGGLE);
+                    ball_velocity.linear.y = (ball_velocity.linear.y * 0.25)
+                        .max(crate::core::BALL_RECOVERY_POP_UP_SPEED);
                     ball_ground_state.grounded = false;
                     clear_incoming_pass(&mut incoming_pass);
+                    set_ball_action(
+                        &mut action_state,
+                        BallActionPhase::JugglingRecovery,
+                        Some(attempt.player),
+                        None,
+                    );
 
                     let quality =
                         calculate_touch_quality(distance, profile.radius, ball_height, profile);
@@ -207,9 +246,15 @@ fn resolve_touch_attempts(
 
         ball_velocity.linear.x = 0.0;
         ball_velocity.linear.z = 0.0;
-        ball_velocity.linear.y = crate::core::TOUCH_UP_IMPULSE_JUGGLE * 0.84;
+        ball_velocity.linear.y = crate::core::BALL_RECOVERY_POP_UP_SPEED * 0.9;
         ball_ground_state.grounded = false;
         clear_incoming_pass(&mut incoming_pass);
+        set_ball_action(
+            &mut action_state,
+            BallActionPhase::JugglingRecovery,
+            Some(attempt.player),
+            None,
+        );
 
         let quality = calculate_touch_quality(distance, profile.radius, ball_height, profile);
         touched_writer.write(crate::core::BallTouchedEvent {
@@ -232,6 +277,7 @@ fn simulate_ball(
             &mut BallVelocity,
             &mut BallGroundState,
             &mut BallIncomingPass,
+            &mut BallActionState,
         ),
         (With<Ball>, Without<crate::core::PlayerBody>),
     >,
@@ -255,8 +301,13 @@ fn simulate_ball(
         return;
     }
 
-    for (mut ball_transform, mut ball_velocity, mut ball_ground_state, mut incoming_pass) in
-        &mut ball_query
+    for (
+        mut ball_transform,
+        mut ball_velocity,
+        mut ball_ground_state,
+        mut incoming_pass,
+        mut action_state,
+    ) in &mut ball_query
     {
         let was_grounded = ball_ground_state.grounded;
 
@@ -319,9 +370,9 @@ fn simulate_ball(
         ball_ground_state.grounded =
             ball_transform.translation.y <= crate::core::BALL_RADIUS + 0.0001;
 
-        if let Some(receiver) = incoming_pass.receiver {
-            if possession.holder.is_none() {
-                try_auto_receive_for_npc(
+        if possession.holder.is_none() {
+            if let Some(receiver) = incoming_pass.receiver {
+                try_auto_receive_for_target(
                     receiver,
                     incoming_pass.kind.unwrap_or(crate::core::TouchKind::Juggle),
                     &player_query,
@@ -330,6 +381,17 @@ fn simulate_ball(
                     ball_ground_state.grounded,
                     &mut touched_writer,
                     &mut incoming_pass,
+                    &mut action_state,
+                );
+            } else {
+                try_claim_loose_ball(
+                    &player_query,
+                    &mut ball_transform.translation,
+                    &mut ball_velocity.linear,
+                    ball_ground_state.grounded,
+                    &mut touched_writer,
+                    &mut incoming_pass,
+                    &mut action_state,
                 );
             }
         }
@@ -339,6 +401,232 @@ fn simulate_ball(
             clear_incoming_pass(&mut incoming_pass);
         }
     }
+}
+
+fn update_ball_action_pipeline(
+    time: Res<Time>,
+    mut possession: ResMut<crate::features::player::BallPossessionState>,
+    mut pass_queue: ResMut<crate::features::player::PlayerPassRequestQueue>,
+    mut rally_reset: ResMut<RallyResetState>,
+    mut ball_query: Query<
+        (
+            &mut Transform,
+            &mut BallVelocity,
+            &mut BallGroundState,
+            &mut BallIncomingPass,
+            &mut BallActionState,
+            &mut BallGroundedTimeout,
+        ),
+        (With<Ball>, Without<crate::core::PlayerBody>),
+    >,
+    player_query: Query<
+        (
+            Entity,
+            &Transform,
+            Option<&crate::features::player::ControlledPlayer>,
+            Option<&crate::features::player::PlayerFacing>,
+        ),
+        (With<crate::core::PlayerBody>, Without<Ball>),
+    >,
+    mut previous_holder: Local<Option<Entity>>,
+    mut previous_phase: Local<Option<BallActionPhase>>,
+) {
+    let delta_seconds = time.delta_secs();
+    if delta_seconds <= 0.0 {
+        return;
+    }
+
+    let Ok((
+        mut ball_transform,
+        mut ball_velocity,
+        mut ball_ground_state,
+        mut incoming_pass,
+        mut action_state,
+        mut grounded_timeout,
+    )) = ball_query.single_mut()
+    else {
+        return;
+    };
+
+    if let Some(holder) = possession.holder {
+        let mut release = false;
+        if let Ok((_entity, holder_transform, _controlled, _facing)) = player_query.get(holder) {
+            let holder_position = Vec2::new(
+                holder_transform.translation.x,
+                holder_transform.translation.z,
+            );
+            let ball_position =
+                Vec2::new(ball_transform.translation.x, ball_transform.translation.z);
+            if (holder_position - ball_position).length()
+                > crate::core::BALL_CONTROL_RELEASE_DISTANCE
+                && ball_ground_state.grounded
+            {
+                release = true;
+            }
+        } else {
+            release = true;
+        }
+
+        if release {
+            debug!(
+                "controller released: {:?} was too far from grounded ball",
+                holder
+            );
+            possession.holder = None;
+        }
+    }
+
+    let horizontal_speed = Vec2::new(ball_velocity.linear.x, ball_velocity.linear.z).length();
+    let grounded_and_uncontrolled = possession.holder.is_none()
+        && ball_ground_state.grounded
+        && horizontal_speed <= crate::core::BALL_DEAD_SPEED_THRESHOLD;
+
+    if grounded_and_uncontrolled {
+        grounded_timeout.elapsed += delta_seconds;
+    } else {
+        grounded_timeout.elapsed = 0.0;
+    }
+
+    if !rally_reset.active && grounded_timeout.elapsed >= crate::core::BALL_GROUNDED_TIMEOUT {
+        rally_reset.active = true;
+        rally_reset.timer = Timer::from_seconds(crate::core::RALLY_RESET_DELAY, TimerMode::Once);
+        debug!(
+            "rally reset triggered: uncontrolled ball grounded for {:.2}s",
+            grounded_timeout.elapsed
+        );
+    }
+
+    if rally_reset.active {
+        rally_reset.timer.tick(time.delta());
+        set_ball_action(&mut action_state, BallActionPhase::Resetting, None, None);
+
+        if rally_reset.timer.is_finished() {
+            reset_rally(
+                &mut ball_transform,
+                &mut ball_velocity,
+                &mut ball_ground_state,
+                &mut incoming_pass,
+                &mut action_state,
+                &mut grounded_timeout,
+                &mut possession,
+                &mut pass_queue,
+                &player_query,
+            );
+            rally_reset.active = false;
+        }
+    } else {
+        let phase = if let Some(holder) = possession.holder {
+            set_ball_action(
+                &mut action_state,
+                BallActionPhase::Controlled,
+                Some(holder),
+                incoming_pass.receiver,
+            );
+            BallActionPhase::Controlled
+        } else if let Some(receiver) = incoming_pass.receiver {
+            set_ball_action(
+                &mut action_state,
+                BallActionPhase::TravelingToTarget,
+                None,
+                Some(receiver),
+            );
+            BallActionPhase::TravelingToTarget
+        } else if grounded_and_uncontrolled {
+            set_ball_action(&mut action_state, BallActionPhase::Dropped, None, None);
+            BallActionPhase::Dropped
+        } else {
+            set_ball_action(&mut action_state, BallActionPhase::Free, None, None);
+            BallActionPhase::Free
+        };
+
+        if previous_phase
+            .map(|previous| previous != phase)
+            .unwrap_or(true)
+        {
+            debug!(
+                "ball action state -> {:?} (controller: {:?}, target: {:?})",
+                phase, action_state.controller, action_state.intended_receiver
+            );
+            *previous_phase = Some(phase);
+        }
+    }
+
+    if *previous_holder != possession.holder {
+        debug!(
+            "controller changed: {:?} -> {:?}",
+            *previous_holder, possession.holder
+        );
+        *previous_holder = possession.holder;
+    }
+}
+
+fn reset_rally(
+    ball_transform: &mut Transform,
+    ball_velocity: &mut BallVelocity,
+    ball_ground_state: &mut BallGroundState,
+    incoming_pass: &mut BallIncomingPass,
+    action_state: &mut BallActionState,
+    grounded_timeout: &mut BallGroundedTimeout,
+    possession: &mut crate::features::player::BallPossessionState,
+    pass_queue: &mut crate::features::player::PlayerPassRequestQueue,
+    player_query: &Query<
+        (
+            Entity,
+            &Transform,
+            Option<&crate::features::player::ControlledPlayer>,
+            Option<&crate::features::player::PlayerFacing>,
+        ),
+        (With<crate::core::PlayerBody>, Without<Ball>),
+    >,
+) {
+    let mut fallback_holder: Option<(Entity, Vec2, Vec2)> = None;
+    let mut preferred_holder: Option<(Entity, Vec2, Vec2)> = None;
+
+    for (player, transform, controlled, facing) in player_query.iter() {
+        let position = Vec2::new(transform.translation.x, transform.translation.z);
+        let facing = facing
+            .map(|facing| facing.0.normalize_or_zero())
+            .filter(|facing| *facing != Vec2::ZERO)
+            .unwrap_or(Vec2::Y);
+        if controlled.is_some() {
+            preferred_holder = Some((player, position, facing));
+            break;
+        }
+        if fallback_holder.is_none() {
+            fallback_holder = Some((player, position, facing));
+        }
+    }
+
+    let holder = preferred_holder.or(fallback_holder);
+
+    if let Some((holder, holder_position, holder_facing)) = holder {
+        let spawn_offset = holder_facing * crate::core::BALL_CONTROL_FORWARD_OFFSET;
+        ball_transform.translation.x = holder_position.x + spawn_offset.x;
+        ball_transform.translation.z = holder_position.y + spawn_offset.y;
+        ball_transform.translation.y = crate::core::BALL_RADIUS;
+        possession.holder = Some(holder);
+        set_ball_action(
+            action_state,
+            BallActionPhase::Controlled,
+            Some(holder),
+            None,
+        );
+        debug!("rally reset complete: reassigned control to {:?}", holder);
+    } else {
+        ball_transform.translation.x = crate::core::BALL_START_X;
+        ball_transform.translation.z = crate::core::BALL_START_Z;
+        ball_transform.translation.y = crate::core::BALL_RADIUS;
+        possession.holder = None;
+        set_ball_action(action_state, BallActionPhase::Free, None, None);
+        debug!("rally reset complete: no available holder, ball reset to center");
+    }
+
+    ball_velocity.linear = Vec3::ZERO;
+    ball_ground_state.grounded = true;
+    grounded_timeout.elapsed = 0.0;
+    clear_incoming_pass(incoming_pass);
+    pass_queue.order.clear();
+    pass_queue.npc_rejoin_cooldowns.clear();
 }
 
 fn apply_holder_control_bias(
@@ -433,7 +721,7 @@ fn apply_receiver_assist(
     ball_velocity.z += steer.y;
 }
 
-fn try_auto_receive_for_npc(
+fn try_auto_receive_for_target(
     receiver: Entity,
     receive_kind: crate::core::TouchKind,
     player_query: &Query<
@@ -450,16 +738,13 @@ fn try_auto_receive_for_npc(
     ball_grounded: bool,
     touched_writer: &mut MessageWriter<crate::core::BallTouchedEvent>,
     incoming_pass: &mut BallIncomingPass,
+    action_state: &mut BallActionState,
 ) {
-    let Ok((_entity, receiver_transform, receiver_controlled, _)) = player_query.get(receiver)
+    let Ok((_entity, receiver_transform, _receiver_controlled, _)) = player_query.get(receiver)
     else {
         clear_incoming_pass(incoming_pass);
         return;
     };
-
-    if receiver_controlled.is_some() {
-        return;
-    }
 
     let receiver_position = Vec2::new(
         receiver_transform.translation.x,
@@ -493,6 +778,85 @@ fn try_auto_receive_for_npc(
     });
 
     clear_incoming_pass(incoming_pass);
+    set_ball_action(
+        action_state,
+        BallActionPhase::PreparingTouch,
+        Some(receiver),
+        None,
+    );
+}
+
+fn try_claim_loose_ball(
+    player_query: &Query<
+        (
+            Entity,
+            &Transform,
+            Option<&crate::features::player::ControlledPlayer>,
+            Option<&crate::features::player::PlayerFacing>,
+        ),
+        (With<crate::core::PlayerBody>, Without<Ball>),
+    >,
+    ball_position: &mut Vec3,
+    ball_velocity: &mut Vec3,
+    ball_grounded: bool,
+    touched_writer: &mut MessageWriter<crate::core::BallTouchedEvent>,
+    incoming_pass: &mut BallIncomingPass,
+    action_state: &mut BallActionState,
+) {
+    if ball_position.y > crate::core::BALL_LOOSE_CLAIM_HEIGHT_MAX {
+        return;
+    }
+
+    let ball_xz = Vec2::new(ball_position.x, ball_position.z);
+    let mut best: Option<(Entity, Vec2, f32)> = None;
+
+    for (player, transform, controlled, facing) in player_query.iter() {
+        let player_position = Vec2::new(transform.translation.x, transform.translation.z);
+        let distance = (player_position - ball_xz).length();
+        if distance > crate::core::BALL_LOOSE_CLAIM_RADIUS {
+            continue;
+        }
+
+        let facing = facing
+            .map(|facing| facing.0.normalize_or_zero())
+            .filter(|facing| *facing != Vec2::ZERO)
+            .unwrap_or(Vec2::Y);
+        let human_bias = if controlled.is_some() { 0.10 } else { 0.0 };
+        let score = (1.0 - distance / crate::core::BALL_LOOSE_CLAIM_RADIUS) + human_bias;
+        match best {
+            Some((_, _, best_score)) if score <= best_score => {}
+            _ => best = Some((player, facing, score)),
+        }
+    }
+
+    let Some((claimer, facing, score)) = best else {
+        return;
+    };
+
+    if !ball_grounded && ball_velocity.y > 1.35 {
+        return;
+    }
+
+    ball_position.x += facing.x * crate::core::BALL_CONTROL_FORWARD_OFFSET * 0.35;
+    ball_position.z += facing.y * crate::core::BALL_CONTROL_FORWARD_OFFSET * 0.35;
+    ball_position.y = crate::core::BALL_RADIUS;
+    ball_velocity.x = facing.x * crate::core::BALL_RECOVERY_POP_FORWARD_SPEED;
+    ball_velocity.z = facing.y * crate::core::BALL_RECOVERY_POP_FORWARD_SPEED;
+    ball_velocity.y = crate::core::BALL_RECOVERY_POP_UP_SPEED * 0.9;
+
+    touched_writer.write(crate::core::BallTouchedEvent {
+        player: claimer,
+        kind: crate::core::TouchKind::Juggle,
+        quality: score.clamp(0.0, 1.0),
+        ball_height: ball_position.y,
+    });
+    clear_incoming_pass(incoming_pass);
+    set_ball_action(
+        action_state,
+        BallActionPhase::PreparingTouch,
+        Some(claimer),
+        None,
+    );
 }
 
 fn launch_targeted_pass(
@@ -505,6 +869,7 @@ fn launch_targeted_pass(
     ball_velocity: &mut BallVelocity,
     ball_ground_state: &mut BallGroundState,
     incoming_pass: &mut BallIncomingPass,
+    action_state: &mut BallActionState,
     pass_launched_writer: &mut MessageWriter<crate::core::BallPassLaunchedEvent>,
 ) {
     let source = Vec2::new(ball_transform.translation.x, ball_transform.translation.z);
@@ -541,6 +906,12 @@ fn launch_targeted_pass(
     incoming_pass.passer = Some(passer);
     incoming_pass.receiver = Some(receiver);
     incoming_pass.kind = Some(kind);
+    set_ball_action(
+        action_state,
+        BallActionPhase::Passing,
+        Some(passer),
+        Some(receiver),
+    );
 
     pass_launched_writer.write(crate::core::BallPassLaunchedEvent {
         passer,
@@ -569,6 +940,17 @@ fn clear_incoming_pass(incoming_pass: &mut BallIncomingPass) {
     incoming_pass.passer = None;
     incoming_pass.receiver = None;
     incoming_pass.kind = None;
+}
+
+fn set_ball_action(
+    action_state: &mut BallActionState,
+    phase: BallActionPhase,
+    controller: Option<Entity>,
+    intended_receiver: Option<Entity>,
+) {
+    action_state.phase = phase;
+    action_state.controller = controller;
+    action_state.intended_receiver = intended_receiver;
 }
 
 fn resolve_player_foot_contacts(

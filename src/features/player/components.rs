@@ -60,6 +60,9 @@ pub enum NpcBehaviorState {
     CallingForPass,
     PreparingToReceive,
     ControllingBall,
+    RecoveringBall,
+    ChoosingPass,
+    ExecutingPass,
     Passing,
     RecoveringToHome,
 }
@@ -70,7 +73,6 @@ pub struct NpcBehavior {
     pub drift_target: Vec2,
     pub drift_timer: Timer,
     pub call_decision_timer: Timer,
-    pub pass_timer: Timer,
     pub last_pass_target: Option<Entity>,
 }
 
@@ -87,12 +89,57 @@ impl NpcBehavior {
                 call_interval_from_phase(phase),
                 TimerMode::Repeating,
             ),
-            pass_timer: Timer::from_seconds(
-                pass_hesitation_from_phase(phase),
-                TimerMode::Repeating,
-            ),
             last_pass_target: None,
         }
+    }
+}
+
+#[derive(Debug, Clone, Copy, Eq, PartialEq)]
+pub enum ControllerActionState {
+    Idle,
+    PreparingToReceive,
+    ControllingBall,
+    RecoveringBall,
+    ChoosingPass,
+    ExecutingPass,
+}
+
+#[derive(Component, Debug, Clone)]
+pub struct NpcControllerPlan {
+    pub action: ControllerActionState,
+    pub settle_timer: Timer,
+    pub decision_timer: Timer,
+    pub execution_timer: Timer,
+    pub pending_target: Option<Entity>,
+    pub pending_touch_kind: Option<crate::core::TouchKind>,
+}
+
+impl NpcControllerPlan {
+    pub fn new(phase: f32) -> Self {
+        Self {
+            action: ControllerActionState::Idle,
+            settle_timer: timer_once(controller_settle_delay_from_phase(phase)),
+            decision_timer: timer_once(pass_decision_delay_from_phase(phase)),
+            execution_timer: timer_once(crate::core::NPC_PASS_EXECUTION_DELAY),
+            pending_target: None,
+            pending_touch_kind: None,
+        }
+    }
+
+    pub fn begin_receive(&mut self, phase: f32) {
+        self.action = ControllerActionState::PreparingToReceive;
+        self.pending_target = None;
+        self.pending_touch_kind = None;
+        self.settle_timer = timer_once(controller_settle_delay_from_phase(phase));
+    }
+
+    pub fn reset_idle(&mut self, phase: f32) {
+        self.action = ControllerActionState::Idle;
+        self.pending_target = None;
+        self.pending_touch_kind = None;
+        self.settle_timer = timer_once(controller_settle_delay_from_phase(phase));
+        self.decision_timer = timer_once(pass_decision_delay_from_phase(phase));
+        self.execution_timer = timer_once(crate::core::NPC_PASS_EXECUTION_DELAY);
     }
 }
 
@@ -118,12 +165,24 @@ pub fn call_interval_from_phase(phase: f32) -> f32 {
     )
 }
 
-pub fn pass_hesitation_from_phase(phase: f32) -> f32 {
+pub fn controller_settle_delay_from_phase(phase: f32) -> f32 {
     lerp(
-        crate::core::NPC_PASS_HESITATION_MIN,
-        crate::core::NPC_PASS_HESITATION_MAX,
+        crate::core::NPC_CONTROLLER_SETTLE_DELAY_MIN,
+        crate::core::NPC_CONTROLLER_SETTLE_DELAY_MAX,
         phase,
     )
+}
+
+pub fn pass_decision_delay_from_phase(phase: f32) -> f32 {
+    lerp(
+        crate::core::NPC_PASS_DECISION_DELAY_MIN,
+        crate::core::NPC_PASS_DECISION_DELAY_MAX,
+        phase,
+    )
+}
+
+fn timer_once(seconds: f32) -> Timer {
+    Timer::from_seconds(seconds.max(0.001), TimerMode::Once)
 }
 
 fn lerp(min: f32, max: f32, phase: f32) -> f32 {

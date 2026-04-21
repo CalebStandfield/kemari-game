@@ -8,6 +8,7 @@ mod spawn;
 mod systems;
 
 use bevy::ecs::message::MessageWriter;
+use bevy::log::debug;
 use bevy::prelude::*;
 use std::f32::consts::TAU;
 
@@ -138,7 +139,10 @@ fn spawn_players(
 
         if !is_controlled {
             let phase = slot_index as f32 * 0.173;
-            entity_commands.insert(components::NpcBehavior::new(home, phase));
+            entity_commands.insert((
+                components::NpcBehavior::new(home, phase),
+                components::NpcControllerPlan::new(phase),
+            ));
         }
 
         entity_commands.with_children(|parent| {
@@ -198,6 +202,8 @@ fn apply_start_possession(
             &mut crate::features::ball::BallVelocity,
             &mut crate::features::ball::BallGroundState,
             &mut crate::features::ball::BallIncomingPass,
+            &mut crate::features::ball::BallActionState,
+            &mut crate::features::ball::BallGroundedTimeout,
         ),
         (With<crate::features::ball::Ball>, Without<ControlledPlayer>),
     >,
@@ -211,8 +217,14 @@ fn apply_start_possession(
     else {
         return;
     };
-    let Ok((mut ball_transform, mut ball_velocity, mut ball_ground_state, mut incoming_pass)) =
-        ball_query.single_mut()
+    let Ok((
+        mut ball_transform,
+        mut ball_velocity,
+        mut ball_ground_state,
+        mut incoming_pass,
+        mut action_state,
+        mut grounded_timeout,
+    )) = ball_query.single_mut()
     else {
         return;
     };
@@ -231,6 +243,10 @@ fn apply_start_possession(
     incoming_pass.passer = None;
     incoming_pass.receiver = None;
     incoming_pass.kind = None;
+    action_state.phase = crate::features::ball::BallActionPhase::Controlled;
+    action_state.controller = Some(player);
+    action_state.intended_receiver = None;
+    grounded_timeout.elapsed = 0.0;
 
     possession.holder = Some(player);
     call_for_ball.active = false;
@@ -395,6 +411,7 @@ fn update_npc_behavior_state(
             &mut components::PlayerDesiredMove,
             &mut components::PlayerFacing,
             &mut components::NpcBehavior,
+            &components::NpcControllerPlan,
         ),
         (With<Player>, Without<ControlledPlayer>),
     >,
@@ -419,11 +436,11 @@ fn update_npc_behavior_state(
         mut desired_move,
         mut facing,
         mut behavior,
+        controller_plan,
     ) in &mut npc_query
     {
         behavior.drift_timer.tick(time.delta());
         behavior.call_decision_timer.tick(time.delta());
-        behavior.pass_timer.tick(time.delta());
 
         let position = Vec2::new(transform.translation.x, transform.translation.z);
         let to_home = home.0 - position;
@@ -432,17 +449,9 @@ fn update_npc_behavior_state(
         let is_intended_receiver = incoming_receiver == Some(entity);
 
         if has_ball_control {
-            if behavior.state != components::NpcBehaviorState::ControllingBall {
-                let phase = time.elapsed_secs() * 0.6 + slot.index as f32 * 0.77;
-                let next_delay = components::pass_hesitation_from_phase(phase);
-                behavior
-                    .pass_timer
-                    .set_duration(std::time::Duration::from_secs_f32(next_delay));
-                behavior.pass_timer.reset();
-            }
-            behavior.state = components::NpcBehaviorState::ControllingBall;
             call_for_ball.active = false;
             desired_move.0 = to_home.normalize_or_zero() * crate::core::PLAYER_ZONE_IDLE_SPEED;
+            behavior.state = controller_behavior_state(controller_plan.action);
 
             let face_ball = (ball_position - position).normalize_or_zero();
             if face_ball.length_squared() > 0.0 {
@@ -514,6 +523,18 @@ fn update_npc_behavior_state(
             }
         }
 
+        let keep_zone_bias = Vec2::new(
+            (time.elapsed_secs() * 0.82 + slot.index as f32 * 1.17).sin(),
+            (time.elapsed_secs() * 0.62 + slot.index as f32 * 0.91).cos(),
+        )
+        .normalize_or_zero();
+        let centered_target = clamp_to_zone(
+            home.0,
+            behavior.drift_target + keep_zone_bias * zone.0 * 0.18,
+            zone.0,
+        );
+
+        behavior.drift_target = centered_target;
         let toward_drift = behavior.drift_target - position;
         let speed = if call_for_ball.active {
             crate::core::PLAYER_ZONE_RECEIVE_SPEED
@@ -597,7 +618,14 @@ fn emit_npc_touch_attempts(
     time: Res<Time>,
     possession: Res<pass_queue::BallPossessionState>,
     pass_queue: Res<pass_queue::PlayerPassRequestQueue>,
-    ball_query: Query<&Transform, With<crate::features::ball::Ball>>,
+    ball_query: Query<
+        (
+            &Transform,
+            &crate::features::ball::BallVelocity,
+            &crate::features::ball::BallGroundState,
+        ),
+        With<crate::features::ball::Ball>,
+    >,
     mut touch_writer: MessageWriter<crate::core::PlayerTouchAttemptEvent>,
     mut npc_query: Query<
         (
@@ -607,15 +635,18 @@ fn emit_npc_touch_attempts(
             &mut components::PlayerFacing,
             &mut components::PlayerTouchCooldowns,
             &mut components::NpcBehavior,
+            &mut components::NpcControllerPlan,
         ),
         (With<Player>, Without<ControlledPlayer>),
     >,
     candidate_query: Query<(Entity, &Transform, &components::PlayerCallForBall), With<Player>>,
 ) {
-    let ball_height = ball_query
-        .single()
-        .map(|transform| transform.translation.y)
-        .unwrap_or(crate::core::BALL_RADIUS);
+    let Ok((ball_transform, ball_velocity, ball_ground)) = ball_query.single() else {
+        return;
+    };
+    let ball_height = ball_transform.translation.y;
+    let ball_position = Vec2::new(ball_transform.translation.x, ball_transform.translation.z);
+    let horizontal_speed = Vec2::new(ball_velocity.linear.x, ball_velocity.linear.z).length();
 
     let mut candidates = Vec::new();
     for (entity, transform, call_for_ball) in &candidate_query {
@@ -626,83 +657,188 @@ fn emit_npc_touch_attempts(
         ));
     }
 
-    for (entity, transform, slot, mut facing, mut cooldowns, mut behavior) in &mut npc_query {
-        if possession.holder != Some(entity) {
-            continue;
-        }
-        if !behavior.pass_timer.is_finished() {
+    for (entity, transform, slot, mut facing, mut cooldowns, mut behavior, mut controller_plan) in
+        &mut npc_query
+    {
+        let phase = (time.elapsed_secs() * 0.56 + slot.index as f32 * 0.73).sin() * 0.5 + 0.5;
+        let has_ball_control = possession.holder == Some(entity);
+
+        if !has_ball_control {
+            if controller_plan.action != components::ControllerActionState::Idle {
+                controller_plan.reset_idle(phase);
+            }
             continue;
         }
 
         let position = Vec2::new(transform.translation.x, transform.translation.z);
-        let maybe_target = choose_npc_target(
-            entity,
-            position,
-            behavior.last_pass_target,
-            &pass_queue.order,
-            &candidates,
-        );
+        let face_ball = (ball_position - position).normalize_or_zero();
+        if face_ball != Vec2::ZERO {
+            facing.0 = face_ball;
+        }
 
-        let Some(target) = maybe_target else {
-            behavior.pass_timer.reset();
-            continue;
-        };
+        if controller_plan.action == components::ControllerActionState::Idle {
+            controller_plan.begin_receive(phase);
+            debug!("controller changed: npc {:?} gained possession", entity);
+        }
 
-        let target_position = candidates
-            .iter()
-            .find_map(|(candidate, pos, _)| (*candidate == target).then_some(*pos))
-            .unwrap_or(position);
+        match controller_plan.action {
+            components::ControllerActionState::Idle => {}
+            components::ControllerActionState::PreparingToReceive
+            | components::ControllerActionState::ControllingBall => {
+                controller_plan.settle_timer.tick(time.delta());
+                controller_plan.action = components::ControllerActionState::ControllingBall;
+                if controller_plan.settle_timer.is_finished() {
+                    if should_npc_recover_ball(ball_height, ball_ground.grounded, horizontal_speed)
+                    {
+                        controller_plan.action = components::ControllerActionState::RecoveringBall;
+                        controller_plan.execution_timer =
+                            timer_once(crate::core::NPC_RECOVERY_TOUCH_DELAY);
+                        debug!("npc {:?} entered recovery", entity);
+                    } else {
+                        controller_plan.action = components::ControllerActionState::ChoosingPass;
+                        controller_plan.decision_timer =
+                            timer_once(components::pass_decision_delay_from_phase(phase));
+                    }
+                }
+            }
+            components::ControllerActionState::RecoveringBall => {
+                controller_plan.execution_timer.tick(time.delta());
+                if !controller_plan.execution_timer.is_finished() {
+                    continue;
+                }
+                if cooldowns.juggle > 0.0 {
+                    continue;
+                }
 
-        let to_target = target_position - position;
-        let distance = to_target.length();
-        let pass_direction = to_target.normalize_or_zero();
-        if pass_direction != Vec2::ZERO {
-            facing.0 = pass_direction;
-            let forward = transform.forward().as_vec3();
-            let forward_xz = Vec2::new(forward.x, forward.z).normalize_or_zero();
-            let alignment = forward_xz.dot(pass_direction);
-            if alignment < 0.92 {
-                continue;
+                cooldowns.juggle = crate::core::TOUCH_COOLDOWN_JUGGLE;
+                touch_writer.write(crate::core::PlayerTouchAttemptEvent {
+                    player: entity,
+                    kind: crate::core::TouchKind::Juggle,
+                    facing: facing.0,
+                    target: None,
+                });
+                debug!("npc {:?} executed recovery juggle", entity);
+
+                controller_plan.action = components::ControllerActionState::ChoosingPass;
+                controller_plan.pending_target = None;
+                controller_plan.pending_touch_kind = None;
+                controller_plan.decision_timer =
+                    timer_once(components::pass_decision_delay_from_phase(phase + 0.17));
+            }
+            components::ControllerActionState::ChoosingPass => {
+                controller_plan.decision_timer.tick(time.delta());
+                if !controller_plan.decision_timer.is_finished() {
+                    continue;
+                }
+
+                let maybe_target = choose_npc_target(
+                    entity,
+                    position,
+                    behavior.last_pass_target,
+                    &pass_queue.order,
+                    &candidates,
+                );
+                let Some(target) = maybe_target else {
+                    controller_plan.decision_timer =
+                        timer_once(components::pass_decision_delay_from_phase(phase + 0.31));
+                    continue;
+                };
+
+                let target_position = candidates
+                    .iter()
+                    .find_map(|(candidate, pos, _)| (*candidate == target).then_some(*pos))
+                    .unwrap_or(position);
+
+                let distance = (target_position - position).length();
+                let touch_kind = choose_npc_pass_kind(distance, ball_height, phase);
+                controller_plan.pending_target = Some(target);
+                controller_plan.pending_touch_kind = Some(touch_kind);
+                controller_plan.action = components::ControllerActionState::ExecutingPass;
+                controller_plan.execution_timer = timer_once(crate::core::NPC_PASS_EXECUTION_DELAY);
+
+                let pass_direction = (target_position - position).normalize_or_zero();
+                if pass_direction != Vec2::ZERO {
+                    facing.0 = pass_direction;
+                }
+
+                debug!(
+                    "npc {:?} chose target {:?} with {:?}",
+                    entity, target, touch_kind
+                );
+            }
+            components::ControllerActionState::ExecutingPass => {
+                controller_plan.execution_timer.tick(time.delta());
+                if !controller_plan.execution_timer.is_finished() {
+                    continue;
+                }
+
+                let Some(target) = controller_plan.pending_target else {
+                    controller_plan.action = components::ControllerActionState::ChoosingPass;
+                    controller_plan.decision_timer =
+                        timer_once(components::pass_decision_delay_from_phase(phase + 0.41));
+                    continue;
+                };
+
+                if target == entity
+                    || !candidates
+                        .iter()
+                        .any(|(candidate, _, _)| *candidate == target)
+                {
+                    controller_plan.pending_target = None;
+                    controller_plan.pending_touch_kind = None;
+                    controller_plan.action = components::ControllerActionState::ChoosingPass;
+                    controller_plan.decision_timer =
+                        timer_once(components::pass_decision_delay_from_phase(phase + 0.47));
+                    continue;
+                }
+
+                let touch_kind = controller_plan
+                    .pending_touch_kind
+                    .unwrap_or(crate::core::TouchKind::Kick);
+                let cooldown = match touch_kind {
+                    crate::core::TouchKind::Kick => &mut cooldowns.kick,
+                    crate::core::TouchKind::Head => &mut cooldowns.head,
+                    crate::core::TouchKind::Juggle => &mut cooldowns.juggle,
+                };
+                if *cooldown > 0.0 {
+                    continue;
+                }
+
+                let target_position = candidates
+                    .iter()
+                    .find_map(|(candidate, pos, _)| (*candidate == target).then_some(*pos))
+                    .unwrap_or(position);
+                let pass_direction = (target_position - position).normalize_or_zero();
+                if pass_direction != Vec2::ZERO {
+                    facing.0 = pass_direction;
+                }
+
+                *cooldown = match touch_kind {
+                    crate::core::TouchKind::Kick => crate::core::TOUCH_COOLDOWN_KICK,
+                    crate::core::TouchKind::Head => crate::core::TOUCH_COOLDOWN_HEAD,
+                    crate::core::TouchKind::Juggle => crate::core::TOUCH_COOLDOWN_JUGGLE,
+                };
+
+                touch_writer.write(crate::core::PlayerTouchAttemptEvent {
+                    player: entity,
+                    kind: touch_kind,
+                    facing: facing.0,
+                    target: Some(target),
+                });
+                debug!(
+                    "npc {:?} executed {:?} pass to {:?}",
+                    entity, touch_kind, target
+                );
+
+                behavior.last_pass_target = Some(target);
+                behavior.state = components::NpcBehaviorState::Passing;
+                controller_plan.pending_target = None;
+                controller_plan.pending_touch_kind = None;
+                controller_plan.action = components::ControllerActionState::ControllingBall;
+                controller_plan.settle_timer =
+                    timer_once(components::controller_settle_delay_from_phase(phase + 0.23));
             }
         }
-
-        let phase = (time.elapsed_secs() * 0.6 + slot.index as f32 * 0.77).sin() * 0.5 + 0.5;
-        let touch_kind = choose_npc_touch_kind(distance, ball_height, phase);
-
-        let cooldown = match touch_kind {
-            crate::core::TouchKind::Kick => &mut cooldowns.kick,
-            crate::core::TouchKind::Head => &mut cooldowns.head,
-            crate::core::TouchKind::Juggle => &mut cooldowns.juggle,
-        };
-
-        if *cooldown > 0.0 {
-            continue;
-        }
-
-        *cooldown = match touch_kind {
-            crate::core::TouchKind::Kick => crate::core::TOUCH_COOLDOWN_KICK,
-            crate::core::TouchKind::Head => crate::core::TOUCH_COOLDOWN_HEAD,
-            crate::core::TouchKind::Juggle => crate::core::TOUCH_COOLDOWN_JUGGLE,
-        };
-
-        touch_writer.write(crate::core::PlayerTouchAttemptEvent {
-            player: entity,
-            kind: touch_kind,
-            facing: facing.0,
-            target: if touch_kind == crate::core::TouchKind::Juggle {
-                None
-            } else {
-                Some(target)
-            },
-        });
-
-        behavior.state = components::NpcBehaviorState::Passing;
-        behavior.last_pass_target = Some(target);
-        let next_delay = components::pass_hesitation_from_phase(phase + slot.index as f32 * 0.11);
-        behavior
-            .pass_timer
-            .set_duration(std::time::Duration::from_secs_f32(next_delay));
-        behavior.pass_timer.reset();
     }
 }
 
@@ -728,7 +864,7 @@ fn apply_zone_movement(
     let turn_lerp = (crate::core::PLAYER_TURN_SPEED * delta_seconds).clamp(0.0, 1.0);
 
     for (mut transform, home, _zone, _desired_move, facing, _controlled) in &mut player_query {
-        // All players stay planted on their assigned court spot.
+        // Characters are locked to their ring/home spots; they only rotate.
         transform.translation.x = home.0.x;
         transform.translation.z = home.0.y;
         transform.translation.y = crate::core::PLAYER_Y;
@@ -886,7 +1022,7 @@ fn choose_npc_target(
     best.map(|(target, _)| target)
 }
 
-fn choose_npc_touch_kind(distance: f32, ball_height: f32, phase: f32) -> crate::core::TouchKind {
+fn choose_npc_pass_kind(distance: f32, ball_height: f32, phase: f32) -> crate::core::TouchKind {
     if ball_height >= crate::core::TOUCH_HEIGHT_HEAD_MIN
         && ball_height <= crate::core::TOUCH_HEIGHT_HEAD_MAX
         && phase > 0.68
@@ -894,11 +1030,46 @@ fn choose_npc_touch_kind(distance: f32, ball_height: f32, phase: f32) -> crate::
         return crate::core::TouchKind::Head;
     }
 
-    if distance < 3.0 && phase < 0.25 {
-        return crate::core::TouchKind::Juggle;
+    if distance > 5.0 && ball_height > crate::core::BALL_RECOVERY_HEIGHT_THRESHOLD {
+        return crate::core::TouchKind::Head;
     }
 
     crate::core::TouchKind::Kick
+}
+
+fn should_npc_recover_ball(ball_height: f32, grounded: bool, horizontal_speed: f32) -> bool {
+    if ball_height <= crate::core::BALL_RECOVERY_HEIGHT_THRESHOLD {
+        return true;
+    }
+
+    grounded && horizontal_speed <= crate::core::BALL_DEAD_SPEED_THRESHOLD
+}
+
+fn controller_behavior_state(
+    action: components::ControllerActionState,
+) -> components::NpcBehaviorState {
+    match action {
+        components::ControllerActionState::Idle => components::NpcBehaviorState::Idle,
+        components::ControllerActionState::PreparingToReceive => {
+            components::NpcBehaviorState::PreparingToReceive
+        }
+        components::ControllerActionState::ControllingBall => {
+            components::NpcBehaviorState::ControllingBall
+        }
+        components::ControllerActionState::RecoveringBall => {
+            components::NpcBehaviorState::RecoveringBall
+        }
+        components::ControllerActionState::ChoosingPass => {
+            components::NpcBehaviorState::ChoosingPass
+        }
+        components::ControllerActionState::ExecutingPass => {
+            components::NpcBehaviorState::ExecutingPass
+        }
+    }
+}
+
+fn timer_once(seconds: f32) -> Timer {
+    Timer::from_seconds(seconds.max(0.001), TimerMode::Once)
 }
 
 fn compute_zone_drift_target(home: Vec2, zone_radius: f32, phase: f32) -> Vec2 {

@@ -172,6 +172,11 @@ pub fn apply_ball_possession_to_queue(
         let expected_target = queue.order.front().copied();
 
         possession.holder = Some(player);
+        debug!(
+            "controller changed: {:?} -> {:?}",
+            previous_holder, possession.holder
+        );
+        debug!("receiver gained control: {:?}", player);
 
         if let Ok(mut call_for_ball) = call_state_query.get_mut(player) {
             call_for_ball.active = false;
@@ -232,8 +237,11 @@ pub fn apply_ball_possession_to_queue(
         }
     }
 
-    if grounded_reader.read().next().is_some() {
-        possession.holder = None;
+    for _ in grounded_reader.read() {
+        debug!(
+            "pass_queue: ball touched ground while holder is {:?}; waiting for recovery/reset",
+            possession.holder
+        );
     }
 }
 
