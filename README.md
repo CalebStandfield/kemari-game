@@ -31,7 +31,6 @@ In this prototype you:
 
 ## Controls (planned / current)
 
-- WASD: move
 - Space: kick
 - R: reset game (score, ball, character placements)
 - Esc: quit
