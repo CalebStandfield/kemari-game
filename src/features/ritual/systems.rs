@@ -13,10 +13,14 @@ pub fn update_elegance(
     mut grounded_reader: MessageReader<crate::core::BallHitGroundEvent>,
     mut pattern_state: ResMut<TouchPatternState>,
     mut juggle_rhythm_state: ResMut<PossessionJuggleRhythmState>,
+    chain: Res<crate::features::scoring::ChainCounter>,
     mut elegance: ResMut<EleganceMeter>,
 ) {
+    const ELEGANCE_GAIN_SCALE: f32 = 0.02;
+
     let mut delta = 0.0f32;
     let mut pass_multipliers: HashMap<Entity, VecDeque<f32>> = HashMap::new();
+    let chain_multiplier = chain.value.max(1) as f32;
 
     for pass_resolution in pass_resolution_reader.read() {
         let passer = pass_resolution.passer;
@@ -28,7 +32,8 @@ pub fn update_elegance(
             .push_back(pass_resolution.elegance_multiplier);
 
         if juggle_rhythm_state.holder == Some(passer) {
-            delta -= under_target_possession_penalty(juggle_rhythm_state.juggle_count);
+            delta -= under_target_possession_penalty(juggle_rhythm_state.juggle_count)
+                * chain_multiplier;
             juggle_rhythm_state.holder = Some(pass_resolution.receiver);
             juggle_rhythm_state.juggle_count = 0;
         }
@@ -38,7 +43,8 @@ pub fn update_elegance(
         let player = touched.player;
         if juggle_rhythm_state.holder != Some(player) {
             if juggle_rhythm_state.holder.is_some() {
-                delta -= under_target_possession_penalty(juggle_rhythm_state.juggle_count);
+                delta -= under_target_possession_penalty(juggle_rhythm_state.juggle_count)
+                    * chain_multiplier;
             }
             juggle_rhythm_state.holder = Some(player);
             juggle_rhythm_state.juggle_count = 0;
@@ -76,14 +82,19 @@ pub fn update_elegance(
             touch_value *= juggle_gain_multiplier(juggle_count);
         }
 
-        delta += touch_value * quality_scale * pass_multiplier;
+        let mut touch_delta = touch_value * quality_scale * pass_multiplier;
+        if touch_delta > 0.0 {
+            touch_delta *= ELEGANCE_GAIN_SCALE;
+        }
+        delta += touch_delta * chain_multiplier;
 
         if touched.kind == crate::core::TouchKind::Juggle
             && juggle_rhythm_state.juggle_count > crate::core::ELEGANCE_JUGGLES_MAX_TARGET
         {
             let overflow = (juggle_rhythm_state.juggle_count
                 - crate::core::ELEGANCE_JUGGLES_MAX_TARGET) as f32;
-            delta -= overflow * crate::core::ELEGANCE_JUGGLE_OVER_TARGET_PENALTY_STEP;
+            delta -=
+                overflow * crate::core::ELEGANCE_JUGGLE_OVER_TARGET_PENALTY_STEP * chain_multiplier;
         }
 
         if same_as_last {
@@ -101,11 +112,11 @@ pub fn update_elegance(
         } else {
             1.9
         };
-        delta -= panic_whiff_penalty;
+        delta -= panic_whiff_penalty * chain_multiplier;
     }
 
     for _ in grounded_reader.read() {
-        delta -= 4.5;
+        delta -= 4.5 * chain_multiplier;
         pattern_state.last_touch = None;
         pattern_state.repeat_count = 0;
         juggle_rhythm_state.holder = None;
