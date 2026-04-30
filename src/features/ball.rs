@@ -198,8 +198,8 @@ fn resolve_touch_attempts(
                     horizontal *= crate::core::TOUCH_JUGGLE_HORIZONTAL_DAMP;
                     ball_velocity.linear.x = horizontal.x;
                     ball_velocity.linear.z = horizontal.y;
-                    ball_velocity.linear.y = (ball_velocity.linear.y * 0.25)
-                        .max(crate::core::BALL_RECOVERY_POP_UP_SPEED);
+                    ball_velocity.linear.y =
+                        (ball_velocity.linear.y * 0.25).max(crate::core::TOUCH_UP_IMPULSE_JUGGLE);
                     ball_ground_state.grounded = false;
                     clear_incoming_pass(&mut incoming_pass);
                     set_ball_action(
@@ -246,7 +246,7 @@ fn resolve_touch_attempts(
 
         ball_velocity.linear.x = 0.0;
         ball_velocity.linear.z = 0.0;
-        ball_velocity.linear.y = crate::core::BALL_RECOVERY_POP_UP_SPEED * 0.9;
+        ball_velocity.linear.y = crate::core::TOUCH_UP_IMPULSE_JUGGLE * 0.95;
         ball_ground_state.grounded = false;
         clear_incoming_pass(&mut incoming_pass);
         set_ball_action(
@@ -356,14 +356,24 @@ fn simulate_ball(
             ball_velocity.linear.z *= drag_factor;
         }
 
-        resolve_player_foot_contacts(
-            &mut ball_transform.translation,
-            &mut ball_velocity.linear,
-            ball_ground_state.grounded,
-            delta_seconds,
-            &player_contact_query,
-            &mut player_prev_positions,
-        );
+        let allow_foot_contacts = possession.holder.is_none()
+            && incoming_pass.receiver.is_none()
+            && !matches!(
+                action_state.phase,
+                BallActionPhase::PreparingTouch
+                    | BallActionPhase::JugglingRecovery
+                    | BallActionPhase::Controlled
+            );
+        if allow_foot_contacts {
+            resolve_player_foot_contacts(
+                &mut ball_transform.translation,
+                &mut ball_velocity.linear,
+                ball_ground_state.grounded,
+                delta_seconds,
+                &player_contact_query,
+                &mut player_prev_positions,
+            );
+        }
         resolve_ball_court_bounds(&mut ball_transform.translation, &mut ball_velocity.linear);
         clamp_ball_horizontal_speed(&mut ball_velocity.linear);
 
@@ -740,7 +750,7 @@ fn try_auto_receive_for_target(
     incoming_pass: &mut BallIncomingPass,
     action_state: &mut BallActionState,
 ) {
-    let Ok((_entity, receiver_transform, _receiver_controlled, _)) = player_query.get(receiver)
+    let Ok((_entity, receiver_transform, receiver_controlled, _)) = player_query.get(receiver)
     else {
         clear_incoming_pass(incoming_pass);
         return;
@@ -752,38 +762,72 @@ fn try_auto_receive_for_target(
     );
     let ball_xz = Vec2::new(ball_position.x, ball_position.z);
     let distance = (receiver_position - ball_xz).length();
-    let height_ok = (crate::core::BALL_PASS_RECEIVE_HEIGHT_MIN
-        ..=crate::core::BALL_PASS_RECEIVE_HEIGHT_MAX)
-        .contains(&ball_position.y);
-    let descending_enough = ball_velocity.y <= 1.0 || ball_grounded;
+    let is_npc_receiver = receiver_controlled.is_none();
+    let snap_radius = if is_npc_receiver {
+        crate::core::BALL_PASS_RECEIVE_SNAP_RADIUS + 0.30
+    } else {
+        crate::core::BALL_PASS_RECEIVE_SNAP_RADIUS
+    };
+    let max_receive_height = if is_npc_receiver {
+        crate::core::TOUCH_HEIGHT_HEAD_MAX - 0.15
+    } else {
+        crate::core::BALL_PASS_RECEIVE_HEIGHT_MAX
+    };
+    let height_ok =
+        (crate::core::BALL_PASS_RECEIVE_HEIGHT_MIN..=max_receive_height).contains(&ball_position.y);
+    let descending_velocity_threshold = if is_npc_receiver { 2.25 } else { 1.0 };
+    let descending_enough = ball_velocity.y <= descending_velocity_threshold || ball_grounded;
 
-    if distance > crate::core::BALL_PASS_RECEIVE_SNAP_RADIUS || !height_ok || !descending_enough {
+    if distance > snap_radius || !height_ok || !descending_enough {
         return;
     }
 
     let approach = (receiver_position - ball_xz).normalize_or_zero();
-    ball_position.x =
-        receiver_position.x - approach.x * crate::core::BALL_PASS_RECEIVE_POINT_OFFSET;
-    ball_position.z =
-        receiver_position.y - approach.y * crate::core::BALL_PASS_RECEIVE_POINT_OFFSET;
-    ball_position.y = crate::core::BALL_RADIUS;
-    *ball_velocity = Vec3::ZERO;
+    let receive_offset = if is_npc_receiver {
+        // Keep ball outside collider radius so receive->juggle does not interpenetrate the body.
+        crate::core::BALL_RADIUS + crate::core::PLAYER_COLLIDER_RADIUS + 0.08
+    } else {
+        crate::core::BALL_PASS_RECEIVE_POINT_OFFSET
+    };
+    ball_position.x = receiver_position.x - approach.x * receive_offset;
+    ball_position.z = receiver_position.y - approach.y * receive_offset;
+    let touched_kind = if is_npc_receiver {
+        // NPCs should cushion the pass into an immediate juggle instead of trapping on ground.
+        ball_position.y = crate::core::BALL_RADIUS + 0.34;
+        ball_velocity.x = approach.x * crate::core::BALL_RECOVERY_POP_FORWARD_SPEED * 0.3;
+        ball_velocity.z = approach.y * crate::core::BALL_RECOVERY_POP_FORWARD_SPEED * 0.3;
+        ball_velocity.y = crate::core::TOUCH_UP_IMPULSE_JUGGLE;
+        crate::core::TouchKind::Juggle
+    } else {
+        ball_position.y = crate::core::BALL_RADIUS;
+        *ball_velocity = Vec3::ZERO;
+        receive_kind
+    };
 
-    let quality = (1.0 - (distance / crate::core::BALL_PASS_RECEIVE_SNAP_RADIUS)).clamp(0.0, 1.0);
+    let quality = (1.0 - (distance / snap_radius.max(0.001))).clamp(0.0, 1.0);
     touched_writer.write(crate::core::BallTouchedEvent {
         player: receiver,
-        kind: receive_kind,
+        kind: touched_kind,
         quality,
         ball_height: ball_position.y,
     });
 
     clear_incoming_pass(incoming_pass);
-    set_ball_action(
-        action_state,
-        BallActionPhase::PreparingTouch,
-        Some(receiver),
-        None,
-    );
+    if is_npc_receiver {
+        set_ball_action(
+            action_state,
+            BallActionPhase::JugglingRecovery,
+            Some(receiver),
+            None,
+        );
+    } else {
+        set_ball_action(
+            action_state,
+            BallActionPhase::PreparingTouch,
+            Some(receiver),
+            None,
+        );
+    }
 }
 
 fn try_claim_loose_ball(
@@ -842,7 +886,7 @@ fn try_claim_loose_ball(
     ball_position.y = crate::core::BALL_RADIUS;
     ball_velocity.x = facing.x * crate::core::BALL_RECOVERY_POP_FORWARD_SPEED;
     ball_velocity.z = facing.y * crate::core::BALL_RECOVERY_POP_FORWARD_SPEED;
-    ball_velocity.y = crate::core::BALL_RECOVERY_POP_UP_SPEED * 0.9;
+    ball_velocity.y = crate::core::TOUCH_UP_IMPULSE_JUGGLE * 0.95;
 
     touched_writer.write(crate::core::BallTouchedEvent {
         player: claimer,
@@ -893,9 +937,11 @@ fn launch_targeted_pass(
     );
 
     let target_height = pass_target_height(kind);
-    let vertical_velocity = (target_height - ball_transform.translation.y
+    let source_height = ball_transform.translation.y;
+    let raw_vertical_velocity = (target_height - source_height
         + 0.5 * crate::core::BALL_GRAVITY * travel_time * travel_time)
         / travel_time;
+    let vertical_velocity = ensure_airborne_pass_velocity(kind, raw_vertical_velocity);
 
     let horizontal_velocity = to_target / travel_time;
     ball_velocity.linear.x = horizontal_velocity.x;
@@ -934,6 +980,15 @@ fn pass_target_height(kind: crate::core::TouchKind) -> f32 {
         crate::core::TouchKind::Head => crate::core::BALL_PASS_TARGET_HEIGHT_HEAD,
         crate::core::TouchKind::Juggle => crate::core::BALL_PASS_TARGET_HEIGHT_JUGGLE,
     }
+}
+
+fn ensure_airborne_pass_velocity(kind: crate::core::TouchKind, raw_vertical_velocity: f32) -> f32 {
+    let min_upward = match kind {
+        crate::core::TouchKind::Kick => 2.6,
+        crate::core::TouchKind::Head => 2.1,
+        crate::core::TouchKind::Juggle => 1.6,
+    };
+    raw_vertical_velocity.max(min_upward)
 }
 
 fn clear_incoming_pass(incoming_pass: &mut BallIncomingPass) {

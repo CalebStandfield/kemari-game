@@ -645,6 +645,7 @@ fn emit_npc_touch_attempts(
         return;
     };
     let ball_height = ball_transform.translation.y;
+    let ball_vertical_speed = ball_velocity.linear.y;
     let ball_position = Vec2::new(ball_transform.translation.x, ball_transform.translation.z);
     let horizontal_speed = Vec2::new(ball_velocity.linear.x, ball_velocity.linear.z).length();
 
@@ -675,10 +676,27 @@ fn emit_npc_touch_attempts(
         if face_ball != Vec2::ZERO {
             facing.0 = face_ball;
         }
+        let emergency_juggle = ball_ground.grounded
+            || ball_height <= crate::core::BALL_RADIUS + 0.46
+            || (ball_height <= crate::core::BALL_RADIUS + 0.95 && ball_vertical_speed < -0.35);
 
         if controller_plan.action == components::ControllerActionState::Idle {
             controller_plan.begin_receive(phase);
+            controller_plan.action = components::ControllerActionState::RecoveringBall;
+            controller_plan.execution_timer = timer_once(0.001);
+            controller_plan.pending_target = None;
+            controller_plan.pending_touch_kind = None;
+            cooldowns.juggle = 0.0;
             debug!("controller changed: npc {:?} gained possession", entity);
+        }
+
+        if emergency_juggle
+            && controller_plan.action != components::ControllerActionState::RecoveringBall
+        {
+            controller_plan.action = components::ControllerActionState::RecoveringBall;
+            controller_plan.execution_timer = timer_once(0.001);
+            controller_plan.pending_target = None;
+            controller_plan.pending_touch_kind = None;
         }
 
         match controller_plan.action {
@@ -706,8 +724,11 @@ fn emit_npc_touch_attempts(
                 if !controller_plan.execution_timer.is_finished() {
                     continue;
                 }
-                if cooldowns.juggle > 0.0 {
+                if cooldowns.juggle > 0.0 && !emergency_juggle {
                     continue;
+                }
+                if emergency_juggle {
+                    cooldowns.juggle = 0.0;
                 }
 
                 cooldowns.juggle = crate::core::TOUCH_COOLDOWN_JUGGLE;
@@ -726,6 +747,14 @@ fn emit_npc_touch_attempts(
                     timer_once(components::pass_decision_delay_from_phase(phase + 0.17));
             }
             components::ControllerActionState::ChoosingPass => {
+                if emergency_juggle {
+                    controller_plan.action = components::ControllerActionState::RecoveringBall;
+                    controller_plan.execution_timer = timer_once(0.001);
+                    controller_plan.pending_target = None;
+                    controller_plan.pending_touch_kind = None;
+                    continue;
+                }
+
                 controller_plan.decision_timer.tick(time.delta());
                 if !controller_plan.decision_timer.is_finished() {
                     continue;
@@ -767,6 +796,14 @@ fn emit_npc_touch_attempts(
                 );
             }
             components::ControllerActionState::ExecutingPass => {
+                if emergency_juggle {
+                    controller_plan.action = components::ControllerActionState::RecoveringBall;
+                    controller_plan.execution_timer = timer_once(0.001);
+                    controller_plan.pending_target = None;
+                    controller_plan.pending_touch_kind = None;
+                    continue;
+                }
+
                 controller_plan.execution_timer.tick(time.delta());
                 if !controller_plan.execution_timer.is_finished() {
                     continue;

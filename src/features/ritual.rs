@@ -14,6 +14,7 @@ impl Plugin for RitualPlugin {
     fn build(&self, app: &mut App) {
         app.init_resource::<rhythm::EleganceMeter>()
             .init_resource::<patterns::TouchPatternState>()
+            .init_resource::<patterns::PossessionJuggleRhythmState>()
             .add_systems(
                 OnExit(crate::core::GameState::InGame),
                 systems::reset_match_ritual_state,
