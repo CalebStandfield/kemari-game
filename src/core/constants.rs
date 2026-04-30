@@ -10,7 +10,7 @@ pub const COURTYARD_SCENE_PATH: &str = "models/traditional_chinese_siheyuan_cour
 pub const COURTYARD_SCALE: f32 = 4.0;
 pub const COURTYARD_OFFSET_X: f32 = -1.90;
 pub const COURTYARD_OFFSET_Z: f32 = -1.0;
-pub const COURTYARD_OFFSET_Y: f32 = 0.0;
+pub const COURTYARD_OFFSET_Y: f32 = -0.08;
 
 pub const COURT_CORNER_TREE_PADDING: f32 = 0.25;
 pub const COURT_CORNER_TREE_SCALE: f32 = 15.0;
