@@ -19,7 +19,6 @@ pub const COURT_CORNER_TREE_SCENE_PATH: &str = "models/sakura_tree_01_-_low_poly
 pub const PLAYER_HEIGHT: f32 = 1.6;
 pub const PLAYER_COLLIDER_RADIUS: f32 = 0.35;
 pub const PLAYER_Y: f32 = PLAYER_HEIGHT * 0.5;
-pub const PLAYER_SPEED: f32 = 7.5;
 pub const PLAYER_TURN_SPEED: f32 = 9.5;
 pub const PLAYER_RING_RADIUS: f32 = 3.8;
 pub const PLAYER_ZONE_RADIUS: f32 = 1.25;
@@ -28,7 +27,6 @@ pub const PLAYER_ZONE_IDLE_SPEED: f32 = 1.35;
 pub const PLAYER_ZONE_RECEIVE_SPEED: f32 = 2.25;
 pub const PLAYER_ZONE_WANDER_REACHED_DISTANCE: f32 = 0.20;
 pub const PLAYER_CALL_STEP_BIAS: f32 = 0.45;
-pub const PLAYER_MAX_MOVE_PER_FRAME: f32 = 0.20;
 
 pub const PLAYER_SCENE_PATH: &str = "models/kimono_nagase.glb#Scene0";
 pub const PLAYER_MODEL_SCALE: f32 = 0.11;
@@ -52,6 +50,7 @@ pub const PLAYER_CALLOUT_CALL_BG_ALPHA: f32 = 0.88;
 
 pub const PLAYER_PASS_REQUEST_QUEUE_CAPACITY: usize = 4;
 pub const PLAYER_QUEUE_TIME_WAIT: f32 = 4.0;
+
 pub const NPC_IDLE_DRIFT_INTERVAL_MIN: f32 = 1.2;
 pub const NPC_IDLE_DRIFT_INTERVAL_MAX: f32 = 2.3;
 pub const NPC_CALL_DECISION_INTERVAL_MIN: f32 = 1.0;
