@@ -20,7 +20,8 @@ pub const PLAYER_HEIGHT: f32 = 1.6;
 pub const PLAYER_COLLIDER_RADIUS: f32 = 0.35;
 pub const PLAYER_Y: f32 = PLAYER_HEIGHT * 0.5;
 pub const PLAYER_TURN_SPEED: f32 = 9.5;
-pub const PLAYER_RING_RADIUS: f32 = 3.8;
+
+pub const PLAYER_RING_RADIUS: f32 = 5.0;
 pub const PLAYER_ZONE_RADIUS: f32 = 1.25;
 pub const PLAYER_ZONE_RETURN_SPEED: f32 = 2.7;
 pub const PLAYER_ZONE_IDLE_SPEED: f32 = 1.35;
